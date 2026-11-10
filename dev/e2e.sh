@@ -190,13 +190,13 @@ NOTES_RESP=$(api $RT -X POST $BASE/api/v4/projects/$PID/repository/commits -H 'C
   \"branch\":\"main\",\"commit_message\":\"notes for both\",\"actions\":[
   {\"action\":\"create\",\"file_path\":\"frontend/notes.txt\",\"content\":\"$NEEDLE\"},
   {\"action\":\"create\",\"file_path\":\"backend/notes.txt\",\"content\":\"$NEEDLE\"}]}")
-record "root: the API commit that creates the notes files (setup for search and diff)" 200 $(code $RT "$BASE/api/v4/projects/$PID/repository/files/frontend%2Fnotes.txt?ref=main")
-[ "$(code $RT "$BASE/api/v4/projects/$PID/repository/files/frontend%2Fnotes.txt?ref=main")" = 200 ] || echo "--- notes commit response: $(echo "$NOTES_RESP" | cut -c1-300)" >&2
 NOTES_SHA=$(api $RT $BASE/api/v4/projects/$PID/repository/commits/main | json 'd["id"]')
 P4=$BASE/api/v4/projects/$PID
 code() { curl -s -o /dev/null -w '%{http_code}' -H "PRIVATE-TOKEN: $1" "$2"; }
 list() { api $1 "$2" | python3 -c "import sys,json;d=json.load(sys.stdin);print(' '.join(sorted(x.get('path',x.get('name','')) for x in d)) if isinstance(d,list) else 'ERR')"; }
 has() { case " $1 " in *" $2 "*) echo yes;; *) echo no;; esac; }
+record "root: the API commit that creates the notes files (setup for search and diff)" 200 $(code $RT "$BASE/api/v4/projects/$PID/repository/files/frontend%2Fnotes.txt?ref=main")
+[ "$(code $RT "$BASE/api/v4/projects/$PID/repository/files/frontend%2Fnotes.txt?ref=main")" = 200 ] || echo "--- notes commit response: $(echo "$NOTES_RESP" | cut -c1-300)" >&2
 
 # root reads first, so any cache filled by an admin could leak to the next user
 record "admin reads backend/api.rb (fills any cache)" 200 $(code $RT "$P4/repository/files/backend%2Fapi.rb?ref=main")
