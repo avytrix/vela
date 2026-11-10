@@ -9,7 +9,7 @@
 
 Built and maintained by **[Avytrix Technologies](https://avytrix.dev/?utm_source=vela&utm_medium=docs&utm_campaign=readme)**. Need help shipping? [Hire the team behind it](#work-with-avytrix).
 
-> **Early days.** Write enforcement passes 23 end-to-end tests on a real GitLab CE 19.0.2 ([results](./docs/e2e-results.md)), but that is the only version tested, and reading is not hidden yet. Try it on staging first. See [Status](#status).
+> **Early days.** Write enforcement and read hiding pass 57 end-to-end tests on a real GitLab CE 19.0.2 ([results](./docs/e2e-results.md)), but that is the only version tested. Try it on staging first. See [Status](#status).
 
 ## Sponsoring is what keeps this free
 
@@ -65,8 +65,8 @@ rules:
 | Part | State |
 | ---- | ----- |
 | Rule engine (who may do what to which path) | Built and tested |
-| Write enforcement on push, web edit, API commit, merge and tag (GitLab CE 19.0.x) | Built. 23 live end-to-end tests pass on CE 19.0.2 |
-| Hiding paths in the GitLab web UI, API and search | Planned |
+| Write enforcement on push, web edit, API commit, merge and tag (GitLab CE 19.0.x) | Built and tested live |
+| Hiding paths in GitLab: file lists, file content, raw, blame, search, diffs, API and GraphQL | Built and tested live (commit history and some export routes are not filtered, see below) |
 | Settings page under Project Settings | Planned |
 | Other GitLab CE versions, Docker, Helm, source installs | Planned |
 
@@ -79,7 +79,7 @@ fetch it.
 - **Write rules are enforced.** A push that touches a path the person may not
   change is rejected before it lands.
 - **View and Read rules hide things inside GitLab**: file lists, the file
-  viewer, search and the API. They are not a vault. Anyone who can clone the
+  viewer, search, diffs and the API. They are not a vault. Anyone who can clone the
   repository has every file.
 
 So use vela to keep people from changing the wrong things and to tidy what they

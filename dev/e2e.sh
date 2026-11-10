@@ -161,6 +161,67 @@ state=$(api $RT $BASE/api/v4/projects/$PID/merge_requests/$MR | json 'd["state"]
 [ "$state" = merged ] && v=allowed || v=rejected
 record "alice merges root's MR that changes backend/ (merge HTTP $st, state $state)" rejected $v
 
+# ---------- read hiding (View and Read) ----------
+# One root commit touching both teams' folders, so search and diffs have something to hide.
+NEEDLE="needle$RUN"
+api $RT -X POST $BASE/api/v4/projects/$PID/repository/commits -H 'Content-Type: application/json' -d "{
+  \"branch\":\"main\",\"commit_message\":\"notes for both\",\"actions\":[
+  {\"action\":\"create\",\"file_path\":\"frontend/notes.txt\",\"content\":\"$NEEDLE\"},
+  {\"action\":\"create\",\"file_path\":\"backend/notes.txt\",\"content\":\"$NEEDLE\"}]}" >/dev/null
+NOTES_SHA=$(api $RT $BASE/api/v4/projects/$PID/repository/commits/main | json 'd["id"]')
+P4=$BASE/api/v4/projects/$PID
+code() { curl -s -o /dev/null -w '%{http_code}' -H "PRIVATE-TOKEN: $1" "$2"; }
+list() { api $1 "$2" | python3 -c "import sys,json;d=json.load(sys.stdin);print(' '.join(sorted(x.get('path',x.get('name','')) for x in d)) if isinstance(d,list) else 'ERR')"; }
+has() { case " $1 " in *" $2 "*) echo yes;; *) echo no;; esac; }
+
+# root reads first, so any cache filled by an admin could leak to the next user
+record "admin reads backend/api.rb (fills any cache)" 200 $(code $RT "$P4/repository/files/backend%2Fapi.rb?ref=main")
+T=$(list $AT "$P4/repository/tree?ref=main"); record "alice: tree root hides backend/" no $(has "$T" backend)
+record "alice: tree root shows frontend/" yes $(has "$T" frontend)
+record "alice: tree root shows an unrestricted file (README.md)" yes $(has "$T" README.md)
+record "alice: file in own folder" 200 $(code $AT "$P4/repository/files/frontend%2Fapp.js?ref=main")
+record "alice: file in other team's folder is 404 (after admin read)" 404 $(code $AT "$P4/repository/files/backend%2Fapi.rb?ref=main")
+record "alice: raw file in other team's folder is 404" 404 $(code $AT "$P4/repository/files/backend%2Fapi.rb/raw?ref=main")
+websession() { # user password cookiejar
+  local tok; tok=$(curl -s -c "$3" $BASE/users/sign_in | python3 -c "import sys,re;print(re.search(r'name=\"authenticity_token\" value=\"([^\"]+)\"',sys.stdin.read()).group(1))")
+  curl -s -o /dev/null -b "$3" -c "$3" -X POST $BASE/users/sign_in --data-urlencode "authenticity_token=$tok" --data-urlencode "user[login]=$1" --data-urlencode "user[password]=$2"
+}
+wcode() { curl -s -o /dev/null -w '%{http_code}' -b "$1" "$2"; }
+websession $AU "$APW" $W/alice.jar
+record "alice (web session): raw file in own folder" 200 $(wcode $W/alice.jar "$BASE/root/$PNAME/-/raw/main/frontend/app.js")
+record "alice (web session): raw file in other team's folder is 404" 404 $(wcode $W/alice.jar "$BASE/root/$PNAME/-/raw/main/backend/api.rb")
+record "alice (web session): blob page of a hidden file looks exactly like a missing file" "$(wcode $W/alice.jar "$BASE/root/$PNAME/-/blob/main/frontend/does-not-exist.rb")" "$(wcode $W/alice.jar "$BASE/root/$PNAME/-/blob/main/backend/api.rb")"
+record "alice (web session): blame page of a hidden file looks exactly like a missing file" "$(wcode $W/alice.jar "$BASE/root/$PNAME/-/blame/main/frontend/does-not-exist.rb")" "$(wcode $W/alice.jar "$BASE/root/$PNAME/-/blame/main/backend/api.rb")"
+record "alice (web session): edit page of a hidden file looks exactly like a missing file" "$(wcode $W/alice.jar "$BASE/root/$PNAME/-/edit/main/frontend/does-not-exist.rb")" "$(wcode $W/alice.jar "$BASE/root/$PNAME/-/edit/main/backend/api.rb")"
+GQ=$(curl -s -H "Authorization: Bearer $AT" -H 'Content-Type: application/json' $BASE/api/graphql -d "{\"query\":\"{ project(fullPath: \\\"root/$PNAME\\\") { repository { paginatedTree(path: \\\"\\\", ref: \\\"main\\\") { nodes { trees { nodes { name } } blobs { nodes { name } } } } } } }\"}")
+GN=$(echo "$GQ" | python3 -c "import sys,json;d=json.load(sys.stdin);n=d['data']['project']['repository']['paginatedTree']['nodes'];print(' '.join(x['name'] for g in n for k in ('trees','blobs') for x in g[k]['nodes']))" 2>/dev/null || echo "ERR")
+record "alice: GraphQL tree (web file list) hides backend/" no $(has "$GN" backend)
+record "alice: GraphQL tree shows frontend/" yes $(has "$GN" frontend)
+record "alice: encoded slash variant is still 404" 404 $(code $AT "$P4/repository/files/backend%252Fapi.rb?ref=main")
+c=$(code $AT "$P4/repository/files/frontend%2F..%2Fbackend%2Fapi.rb?ref=main"); [ "$c" = 200 ] && v=served || v=blocked
+record "alice: dot-segment variant is not a way in (HTTP $c)" blocked $v
+T=$(list $AT "$P4/repository/tree?ref=main&path=backend"); record "alice: listing backend/ shows nothing" no $(has "$T" api.rb)
+T=$(list $AT "$P4/repository/tree?ref=main&path=frontend"); record "alice: explicit-deny file is not listed" no $(has "$T" security-config.json)
+record "alice: explicit-deny file is 404" 404 $(code $AT "$P4/repository/files/frontend%2Fsecurity-config.json?ref=main")
+T=$(list $AT "$P4/repository/tree?ref=main&recursive=true&per_page=100"); record "alice: recursive tree hides backend/api.rb" no $(has "$T" backend/api.rb)
+record "alice: recursive tree shows frontend/app.js" yes $(has "$T" frontend/app.js)
+record "bob: reads own folder" 200 $(code $BT "$P4/repository/files/backend%2Fapi.rb?ref=main")
+record "bob: reads shared docs/" 200 $(code $BT "$P4/repository/files/docs%2Freadme.md?ref=main")
+record "bob: frontend/ is 404" 404 $(code $BT "$P4/repository/files/frontend%2Fapp.js?ref=main")
+T=$(list $RT "$P4/repository/tree?ref=main"); record "admin: tree root shows backend/" yes $(has "$T" backend)
+record "admin: reads any file" 200 $(code $RT "$P4/repository/files/frontend%2Fsecurity-config.json?ref=main")
+record "other project without path permissions: files unaffected" 200 $(code $AT "$BASE/api/v4/projects/$OPEN/repository/files/README.md?ref=main")
+S=$(api $AT "$P4/search?scope=blobs&search=$NEEDLE" | python3 -c "import sys,json;print(' '.join(sorted(x['path'] for x in json.load(sys.stdin))))")
+record "alice: code search hides backend/notes.txt" no $(has "$S" backend/notes.txt)
+record "alice: code search finds frontend/notes.txt" yes $(has "$S" frontend/notes.txt)
+S=$(api $RT "$P4/search?scope=blobs&search=$NEEDLE" | python3 -c "import sys,json;print(' '.join(sorted(x['path'] for x in json.load(sys.stdin))))")
+record "admin: code search finds backend/notes.txt" yes $(has "$S" backend/notes.txt)
+DF=$(api $AT "$P4/repository/commits/$NOTES_SHA/diff" | python3 -c "import sys,json;print(' '.join(sorted(x['new_path'] for x in json.load(sys.stdin))))")
+record "alice: commit diff hides backend/notes.txt" no $(has "$DF" backend/notes.txt)
+record "alice: commit diff shows frontend/notes.txt" yes $(has "$DF" frontend/notes.txt)
+DF=$(api $RT "$P4/repository/commits/$NOTES_SHA/diff" | python3 -c "import sys,json;print(' '.join(sorted(x['new_path'] for x in json.load(sys.stdin))))")
+record "admin: commit diff shows backend/notes.txt" yes $(has "$DF" backend/notes.txt)
+
 # ---------- revocation, disabled project, fail closed ----------
 api $RT -X DELETE $BASE/api/v4/groups/$FEG/members/$AID >/dev/null
 fresh $D t14; edit $D frontend/app.js; commit $D; out=$(push $D HEAD:refs/heads/t14); record "after removal from fe group, alice edits frontend/" rejected $(verdict $?)
@@ -170,12 +231,12 @@ O=$W/open; clone $AU $AT $O $ONAME; fresh $O o1; edit $O backend/anything.rb; co
 record "project without path permissions keeps native behaviour" allowed $(verdict $?)
 
 psql "REVOKE SELECT ON path_permission_settings FROM gitlab" >/dev/null
+RC=$(code $AT "$P4/repository/files/frontend%2Fapp.js?ref=main")
 fresh $D t15; edit $D frontend/app.js; commit $D; out=$(push $D HEAD:refs/heads/t15); rc=$?
 psql "GRANT SELECT ON path_permission_settings TO gitlab" >/dev/null
-echo "--- fail-closed push output: $(echo "$out" | tr '\n' ' ' | cut -c1-300)" >&2
 record "rules unreadable: even an allowed push is rejected (fail closed)" rejected $(verdict $rc)
-fresh $D t16; edit $D frontend/app.js; commit $D; out=$(push $D HEAD:refs/heads/t16); rc16=$?; echo "--- restored push output: $(echo "$out" | tr '\n' ' ' | cut -c1-300)" >&2
-record "after the grant is restored, pushes work again" allowed $(verdict $rc16)
+record "rules unreadable: reads fail closed too (404)" 404 $RC
+fresh $D t16; edit $D frontend/app.js; commit $D; out=$(push $D HEAD:refs/heads/t16); record "after the grant is restored, pushes work again" allowed $(verdict $?)
 
 # ---------- report ----------
 VER=$(docker exec $C cat /opt/gitlab/embedded/service/gitlab-rails/VERSION)

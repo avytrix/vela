@@ -21,9 +21,13 @@ docker run -d --name vela-gitlab-ce --hostname localhost --shm-size 256m \
     prometheus_monitoring['enable'] = false
     gitlab_kas['enable'] = false
     registry['enable'] = false
-    letsencrypt['enable'] = false" \
+    letsencrypt['enable'] = false
+    # Re-install the add-on on every reconfigure (runs at each container start and after every upgrade),
+    # so a GitLab upgrade can never leave the initializer behind.
+    require 'fileutils'
+    FileUtils.cp('/opt/vela-path-permissions/overlay/zz_path_permissions.rb', '/opt/gitlab/embedded/service/gitlab-rails/config/initializers/zz_path_permissions.rb')" \
   -v vela_gitlab_config:/etc/gitlab -v vela_gitlab_data:/var/opt/gitlab -v vela_gitlab_logs:/var/log/gitlab \
   -v "$PWD/lib:/opt/vela-path-permissions/lib:ro" \
-  -v "$PWD/overlay/zz_path_permissions.rb:/opt/gitlab/embedded/service/gitlab-rails/config/initializers/zz_path_permissions.rb:ro" \
+  -v "$PWD/overlay:/opt/vela-path-permissions/overlay:ro" \
   gitlab/gitlab-ce:19.0.2-ce.0
 echo "First boot takes ~5-10 min: docker logs -f vela-gitlab-ce"

@@ -1,6 +1,6 @@
 # End-to-end results
 
-GitLab CE 19.0.2 (Docker, arm64), vela commit 8260e1b, 2026-11-10. Script: `dev/e2e.sh`.
+GitLab CE 19.0.2 (Docker, arm64), vela commit 5066ee5, 2026-11-10. Script: `dev/e2e.sh`.
 
 | Result | Case | Expected | Got |
 | --- | --- | --- | --- |
@@ -23,9 +23,43 @@ GitLab CE 19.0.2 (Docker, arm64), vela commit 8260e1b, 2026-11-10. Script: `dev/
 | PASS | API commit to forbidden path (HTTP 400) | rejected | rejected |
 | PASS | API commit to allowed path (HTTP 201) | allowed | allowed |
 | PASS | alice merges root's MR that changes backend/ (merge HTTP 422, state opened) | rejected | rejected |
+| PASS | admin reads backend/api.rb (fills any cache) | 200 | 200 |
+| PASS | alice: tree root hides backend/ | no | no |
+| PASS | alice: tree root shows frontend/ | yes | yes |
+| PASS | alice: tree root shows an unrestricted file (README.md) | yes | yes |
+| PASS | alice: file in own folder | 200 | 200 |
+| PASS | alice: file in other team's folder is 404 (after admin read) | 404 | 404 |
+| PASS | alice: raw file in other team's folder is 404 | 404 | 404 |
+| PASS | alice (web session): raw file in own folder | 200 | 200 |
+| PASS | alice (web session): raw file in other team's folder is 404 | 404 | 404 |
+| PASS | alice (web session): blob page of a hidden file looks exactly like a missing file | 302 | 302 |
+| PASS | alice (web session): blame page of a hidden file looks exactly like a missing file | 302 | 302 |
+| PASS | alice (web session): edit page of a hidden file looks exactly like a missing file | 302 | 302 |
+| PASS | alice: GraphQL tree (web file list) hides backend/ | no | no |
+| PASS | alice: GraphQL tree shows frontend/ | yes | yes |
+| PASS | alice: encoded slash variant is still 404 | 404 | 404 |
+| PASS | alice: dot-segment variant is not a way in (HTTP 400) | blocked | blocked |
+| PASS | alice: listing backend/ shows nothing | no | no |
+| PASS | alice: explicit-deny file is not listed | no | no |
+| PASS | alice: explicit-deny file is 404 | 404 | 404 |
+| PASS | alice: recursive tree hides backend/api.rb | no | no |
+| PASS | alice: recursive tree shows frontend/app.js | yes | yes |
+| PASS | bob: reads own folder | 200 | 200 |
+| PASS | bob: reads shared docs/ | 200 | 200 |
+| PASS | bob: frontend/ is 404 | 404 | 404 |
+| PASS | admin: tree root shows backend/ | yes | yes |
+| PASS | admin: reads any file | 200 | 200 |
+| PASS | other project without path permissions: files unaffected | 200 | 200 |
+| PASS | alice: code search hides backend/notes.txt | no | no |
+| PASS | alice: code search finds frontend/notes.txt | yes | yes |
+| PASS | admin: code search finds backend/notes.txt | yes | yes |
+| PASS | alice: commit diff hides backend/notes.txt | no | no |
+| PASS | alice: commit diff shows frontend/notes.txt | yes | yes |
+| PASS | admin: commit diff shows backend/notes.txt | yes | yes |
 | PASS | after removal from fe group, alice edits frontend/ | rejected | rejected |
 | PASS | project without path permissions keeps native behaviour | allowed | allowed |
 | PASS | rules unreadable: even an allowed push is rejected (fail closed) | rejected | rejected |
+| PASS | rules unreadable: reads fail closed too (404) | 404 | 404 |
 | PASS | after the grant is restored, pushes work again | allowed | allowed |
 
-**23 passed, 0 failed.**
+**57 passed, 0 failed.**

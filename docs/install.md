@@ -236,7 +236,7 @@ If the file is gone, copy it back (step 3) and restart. A missing initializer me
 
 - `git clone` and `git fetch` are not restricted. Do not rely on vela to hide secrets.
 - Only pushes, web edits and API commits are checked for **write**. Pushes to refs that are not branches or tags are not covered.
-- View and Read hiding inside GitLab (file browser, search, API) is not built yet. Right now vela enforces **write** only.
+- View and Read hiding covers the file browser, file content, raw, blame, search, diffs, the API and GraphQL. It does **not** cover commit history and messages, archives, `repository/blobs/:sha`, project export, or the compare endpoint. See [read-design.md](./read-design.md).
 - Tested on GitLab CE 19.0.2. See [e2e-results.md](./e2e-results.md) for exactly what was run.
 
 Questions and bug reports: [open an issue](https://github.com/avytrix/vela/issues/new/choose). Security problems: see [SECURITY.md](../SECURITY.md).

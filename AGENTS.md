@@ -63,7 +63,7 @@ docs/              install guide, design, version audit, e2e results, agent guid
 
 - `git clone` and `git fetch` are not restricted. View and Read rules do not hide content from anyone who can fetch.
 - Only GitLab CE 19.0.x is tested.
-- Reading rules is write-only for now: View and Read hiding inside GitLab's UI and API is not built.
+- View and Read hiding is built for file lists, content, raw, blame, search, diffs, API and GraphQL. Commit history, archives, `repository/blobs/:sha`, export and compare are not filtered.
 - Pushes to refs that are neither branches nor tags are not checked.
 - GitLab's own `find_changed_paths` swallows Gitaly errors and returns `[]`. The branch net-diff check treats an empty answer for differing trees as unverifiable. The per-commit check cannot.
 
