@@ -1,8 +1,9 @@
 name: Compatibility
 
 # Runs the live end-to-end suite against real GitLab CE images, for both tiers, in parallel. Slow (about
-# 20 to 30 minutes a job), so it runs weekly, on demand, and on pull requests that change the add-on itself.
-# A version is listed as supported only when its results here are green.
+# 20 to 30 minutes a job). The full matrix runs weekly and on demand. A pull request that changes the add-on
+# runs only the small subset below (the version that has been hardest to support), plus the package upgrade
+# test. Edit PR_SUBSET to widen it. A version is listed as supported only when its results here are green.
 on:
   workflow_dispatch:
   schedule:
@@ -25,15 +26,26 @@ permissions:
   contents: read
 
 jobs:
+  plan:
+    name: Choose versions
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        run: |
+          PR_SUBSET='{"include":[{"tag":"15.11.0-ce.0","tier":"overlay"}]}'
+          FULL='{"tag":["19.5.3-ce.0","19.0.11-ce.0","19.0.2-ce.0","18.11.0-ce.0","17.11.0-ce.0","16.11.0-ce.0","15.11.0-ce.0"],"tier":["hook","overlay"]}'
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then echo "matrix=$PR_SUBSET" >> "$GITHUB_OUTPUT"; else echo "matrix=$FULL" >> "$GITHUB_OUTPUT"; fi
+
   e2e:
     name: GitLab ${{ matrix.tag }} (${{ matrix.tier }})
+    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 75
     strategy:
       fail-fast: false
-      matrix:
-        tag: ["19.5.3-ce.0", "19.0.11-ce.0", "19.0.2-ce.0", "18.11.0-ce.0", "17.11.0-ce.0", "16.11.0-ce.0", "15.11.0-ce.0"]
-        tier: [hook, overlay]
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: Run the suite
