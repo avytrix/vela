@@ -11,7 +11,7 @@ class WriteCheckTest < Minitest::Test
   def self.setup_once
     return if @done
 
-    P::Install.call # same entry point the initializer uses
+    P::Install.call(read: false) # write side only; read side has its own test
     @done = true
   end
   setup_once

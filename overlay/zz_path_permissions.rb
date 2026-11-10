@@ -5,4 +5,7 @@
 $LOAD_PATH.unshift(File.join(ENV.fetch('VELA_PP_ROOT', '/opt/vela-path-permissions'), 'lib'))
 require 'path_permissions/install'
 
+# Marks user requests so read filtering never touches background jobs or git hooks.
+Rails.application.config.middleware.use PathPermissions::Middleware
+
 Rails.application.config.after_initialize { PathPermissions::Install.call }

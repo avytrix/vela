@@ -34,7 +34,7 @@ module PathPermissions
   end
 
   def selector_matches?(rule, path)
-    rule.type == :file ? rule.path == path : path.start_with?("#{rule.path}/")
+    rule.type == :file ? rule.path == path : (path == rule.path || path.start_with?("#{rule.path}/"))
   end
 
   # Does this principal set (user + groups) pass a single level for path?
