@@ -119,6 +119,31 @@ class WriteCheckTest < Minitest::Test
     assert_equal P::WriteCheck::UNVERIFIABLE, e.message
   end
 
+  # older GitLab: find_changed_paths cannot diff two trees and answers [], so the plain diff is used
+  def landing_old_gitlab(branch, diff_items, user: FakeUser.new(1, false, [101]))
+    P::Store.define_singleton_method(:rules_for) { |_id| RULES }
+    P::Store.define_singleton_method(:group_ids_for) { |u| u.groups }
+    project = FakeProject.new(7, 'main', FakeRepo.new({ 'a' * 40 => 't1', 'b' * 40 => 't2' }, [], nil, diff_items))
+    Gitlab::Checks::DiffCheck.new(project: project, user_access: FakeAccess.new(user), changed_paths: [],
+                                  branch: branch).validate!
+  end
+
+  def test_fallback_diff_still_blocks_a_foreign_change_on_the_default_branch
+    assert_raises(Forbidden) { landing_old_gitlab('main', [['backend/api.rb', nil]]) }
+    landing_old_gitlab('main', [['frontend/app.js', nil]])
+  end
+
+  def test_fallback_checks_both_sides_of_a_rename
+    assert_raises(Forbidden) { landing_old_gitlab('main', [['frontend/a.js', 'backend/a.js']]) }
+  end
+
+  def test_unverifiable_listing_never_blocks_an_admin_or_owner
+    # both listings come back empty although the trees differ: a normal user is stopped, an admin is not
+    assert_raises(Forbidden) { landing_old_gitlab('main', []) }
+    landing_old_gitlab('main', [], user: FakeUser.new(3, true, []))
+    landing_old_gitlab('main', [], user: FakeUser.new(4, false, [], true))
+  end
+
   def test_same_tree_means_nothing_to_check
     landing('main', [], trees: { 'a' * 40 => 't1', 'b' * 40 => 't1' })
   end
