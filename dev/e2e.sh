@@ -186,10 +186,12 @@ record "alice merges root's MR that changes backend/ (merge HTTP $st, state $sta
 if [ "$MODE" = overlay ]; then
 # One root commit touching both teams' folders, so search and diffs have something to hide.
 NEEDLE="needle$RUN"
-api $RT -X POST $BASE/api/v4/projects/$PID/repository/commits -H 'Content-Type: application/json' -d "{
+NOTES_RESP=$(api $RT -X POST $BASE/api/v4/projects/$PID/repository/commits -H 'Content-Type: application/json' -d "{
   \"branch\":\"main\",\"commit_message\":\"notes for both\",\"actions\":[
   {\"action\":\"create\",\"file_path\":\"frontend/notes.txt\",\"content\":\"$NEEDLE\"},
-  {\"action\":\"create\",\"file_path\":\"backend/notes.txt\",\"content\":\"$NEEDLE\"}]}" >/dev/null
+  {\"action\":\"create\",\"file_path\":\"backend/notes.txt\",\"content\":\"$NEEDLE\"}]}")
+record "root: the API commit that creates the notes files (setup for search and diff)" 200 $(code $RT "$BASE/api/v4/projects/$PID/repository/files/frontend%2Fnotes.txt?ref=main")
+[ "$(code $RT "$BASE/api/v4/projects/$PID/repository/files/frontend%2Fnotes.txt?ref=main")" = 200 ] || echo "--- notes commit response: $(echo "$NOTES_RESP" | cut -c1-300)" >&2
 NOTES_SHA=$(api $RT $BASE/api/v4/projects/$PID/repository/commits/main | json 'd["id"]')
 P4=$BASE/api/v4/projects/$PID
 code() { curl -s -o /dev/null -w '%{http_code}' -H "PRIVATE-TOKEN: $1" "$2"; }

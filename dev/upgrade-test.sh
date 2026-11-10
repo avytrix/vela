@@ -29,11 +29,17 @@ docker exec $NAME sh -c 'apt-get update -qq >/dev/null 2>&1; apt-get install -y 
 step "apt-get install gitlab-ce=$TO (the package upgrade; runs the package's own reconfigure)" docker exec $NAME sh -c "DEBIAN_FRONTEND=noninteractive apt-get install -y gitlab-ce=$TO"
 ready
 step "After the upgrade: version, initializer, loaded classes" state
-C=$NAME BASE=http://localhost:$PORT VELA_MODE=overlay RESULTS=/tmp/upgrade-e2e.md dev/e2e.sh > /tmp/upgrade-e2e.log 2>&1
-echo "## Full overlay suite after the upgrade"; echo; echo "\`$(grep -E 'passed|failed' /tmp/upgrade-e2e.log | tail -1)\`"; echo
-grep -E '^FAIL' /tmp/upgrade-e2e.log | sed 's/^/    /'
+suite() { # label -> runs the overlay suite and prints its summary, any failures, and the log tail if it never finished
+  C=$NAME BASE=http://localhost:$PORT VELA_MODE=overlay RESULTS=/tmp/suite.md dev/e2e.sh > /tmp/suite.log 2>&1
+  echo "## Full overlay suite $1"; echo
+  summary=$(grep -E 'passed|failed' /tmp/suite.log | tail -1)
+  if [ -n "$summary" ]; then echo "\`$summary\`"; else echo "The suite did not finish. Last lines of its log:"; echo; echo '```'; tail -8 /tmp/suite.log | cut -c1-200; echo '```'; fi
+  echo; grep -E '^FAIL' /tmp/suite.log | sed 's/^/    /'; echo
+}
+suite "after the upgrade"
 step "apt-get install --allow-downgrades gitlab-ce=$FROM (the downgrade attempt)" docker exec $NAME sh -c "DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades gitlab-ce=$FROM"
 sleep 20; ready
 step "After the downgrade attempt: version, initializer, loaded classes" state
+suite "after the downgrade attempt"
 } > $OUT
 echo "written $OUT"
