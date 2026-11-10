@@ -191,6 +191,10 @@ run in production.
 Have a project in mind? [Tell us about it at avytrix.dev](https://avytrix.dev/?utm_source=vela&utm_medium=docs&utm_campaign=readme-contact),
 or email **hello@avytrix.dev**.
 
+## Project status and handoff
+
+What is verified, what is untested and what to try next is in [docs/HANDOFF.md](./docs/HANDOFF.md). Per-version test results are in [docs/compat/](./docs/compat/README.md).
+
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for the PR workflow. Testing on a GitLab
