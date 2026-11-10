@@ -62,3 +62,24 @@ class EvaluatorTest < Minitest::Test
     end
   end
 end
+
+class ExplainTest < Minitest::Test
+  P = PathPermissions
+
+  def rule(path, type, gid, level, effect)
+    P::Rule.new(path: path, type: type, principal_type: :group, principal_id: gid, level: level, effect: effect)
+  end
+
+  def test_explain_names_the_deciding_rule_and_chains_levels
+    rules = %i[view read].map { |l| rule('docs', :dir, 101, l, :allow) } + [rule('docs/secret.md', :file, 101, :read, :deny)]
+    e = P.explain(rules, user_id: 1, group_ids: [101], path: 'docs/a.md')
+    assert_equal [true, true, false], e.values.map { |v| v[:allowed] }
+    assert_match(/list and you are not on it/, e[:write][:why])
+    e = P.explain(rules, user_id: 1, group_ids: [101], path: 'docs/secret.md')
+    assert_match(/denied by the rule on docs\/secret.md/, e[:read][:why])
+    assert_match(/needs read first/, e[:write][:why])
+    e = P.explain(rules, user_id: 1, group_ids: [], path: 'README.md')
+    assert e.values.all? { |v| v[:allowed] }
+    assert_match(/GitLab's normal permissions/, e[:view][:why])
+  end
+end

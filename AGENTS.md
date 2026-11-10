@@ -9,8 +9,9 @@ Claude Code, Codex, Cursor, Copilot, Gemini and others read this file. `CLAUDE.m
 ```bash
 bin/test                      # all unit tests, plain minitest, Ruby 3.3+, no gems
 ruby test/evaluator_test.rb   # one file
-dev/up.sh                     # throwaway GitLab CE 19.0.2 in Docker (needs Docker or Colima)
-dev/e2e.sh                    # live end-to-end suite against that container, rewrites docs/e2e-results.md
+dev/up.sh                     # throwaway GitLab CE in Docker (GITLAB_TAG, VELA_OVERLAY=0 for hook-only)
+dev/e2e.sh                    # live suite against it (VELA_MODE=overlay|hook), rewrites docs/e2e-results.md
+dev/compat.sh 17.11.0-ce.0 hook   # one fresh version, writes docs/compat/<tag>-<tier>.md
 ```
 
 `bin/test` must pass before every commit. Run `dev/e2e.sh` for any change to `lib/path_permissions/write_check.rb`, `store.rb`, `install.rb` or `db/schema.sql`. Unit tests use a stand-in for GitLab, so they cannot prove behaviour on the real thing.
@@ -19,15 +20,25 @@ dev/e2e.sh                    # live end-to-end suite against that container, re
 
 ```
 lib/path_permissions/
-  evaluator.rb     pure rules engine. No GitLab, no Rails, no I/O.
-  write_check.rb   prepended onto Gitlab::Checks::DiffCheck; rejects forbidden pushes
+  evaluator.rb     pure rules engine (also explain). No GitLab, no Rails, no I/O.
+  hook.rb          Tier A: the portable pre-receive server hook logic (git + REST API only)
+  write_check.rb   Tier B: prepended onto Gitlab::Checks::DiffCheck; rejects forbidden pushes
+  read_check.rb    Tier B: read filters (blob_at, Tree, ls_files, search, diffs)
+  guard.rb         Tier B: per-request actor and the read decision, plus the Rack middleware
   store.rb         loads rules and group ids from the add-on's tables
-  install.rb       boot guard; raises if GitLab dropped the hook we rely on
-overlay/           the one initializer copied into GitLab
-db/schema.sql      add-on tables and grants
-dev/               local GitLab container and the e2e suite
+  admin.rb, ui.rb, ui/   Tier B: the Project Settings page (isolated, optional)
+  install.rb       boot guard; raises if GitLab dropped a method we wrap
+server-hook/       Tier A: the script GitLab runs as a global pre-receive hook
+overlay/           the one initializer copied into GitLab (Tier B)
+db/schema.sql      add-on tables and grants (Tier B)
+bin/doctor         read-only check of what is installed; run after every upgrade
+dev/               up.sh (any version/tier), e2e.sh (both tiers), compat.sh (one version)
 docs/              install guide, design, version audit, e2e results, agent guide
 ```
+
+## Two tiers
+
+GitLab documents only global pre-receive server hooks as a stable way to block something, so **Tier A** (the server hook) enforces writes on any CE version and install method using only documented behaviour. **Tier B** (the overlay) adds read hiding and the settings page, and depends on GitLab internals. Anything that can be done in Tier A must not need GitLab internals. See [`docs/portability.md`](./docs/portability.md).
 
 ## Rules that must not be broken
 
@@ -37,7 +48,7 @@ docs/              install guide, design, version audit, e2e results, agent guid
 4. **No runtime dependencies.** Plain Ruby in `lib/`. An access-control add-on should be readable in one sitting.
 5. **vela only removes access.** It runs *in addition to* GitLab's own checks. Never use it to grant anything.
 6. **Admins and project Owners are never locked out.**
-7. **Do not guess GitLab internals.** Read the source at the target tag (clone `gitlab-foss` at that tag into a scratch directory), cite the file and line in `docs/version-audit.md`, and mark anything you could not run as UNVERIFIED. The e2e suite found three real bypasses that reading alone missed.
+7. **Do not guess GitLab internals, or what the docs say.** The Linux package ignores global hooks until `custom_hooks_dir` is set; reading the docs found that.  Read the source at the target tag (clone `gitlab-foss` at that tag into a scratch directory), cite the file and line in `docs/version-audit.md`, and mark anything you could not run as UNVERIFIED. The e2e suite found three real bypasses that reading alone missed.
 8. **Every access check change needs a test that fails first**, in `test/`, and for write-path changes a case in `dev/e2e.sh`.
 
 ## Semantics (see `evaluator.rb`)
@@ -62,7 +73,7 @@ docs/              install guide, design, version audit, e2e results, agent guid
 ## Known limits (do not paper over them in docs)
 
 - `git clone` and `git fetch` are not restricted. View and Read rules do not hide content from anyone who can fetch.
-- Only GitLab CE 19.0.x is tested.
+- Only versions with green results in `docs/compat/` are tested. Do not claim others.
 - View and Read hiding is built for file lists, content, raw, blame, search, diffs, API and GraphQL. Commit history, archives, `repository/blobs/:sha`, export and compare are not filtered.
 - Pushes to refs that are neither branches nor tags are not checked.
 - GitLab's own `find_changed_paths` swallows Gitaly errors and returns `[]`. The branch net-diff check treats an empty answer for differing trees as unverifiable. The per-commit check cannot.

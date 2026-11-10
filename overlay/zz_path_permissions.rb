@@ -8,4 +8,7 @@ require 'path_permissions/install'
 # Marks user requests so read filtering never touches background jobs or git hooks.
 Rails.application.config.middleware.use PathPermissions::Middleware
 
+# Settings page route, drawn before GitLab's catch-all project routes.
+Rails.application.routes.prepend { PathPermissions::UI.draw(self) }
+
 Rails.application.config.after_initialize { PathPermissions::Install.call }

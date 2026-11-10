@@ -37,29 +37,56 @@ module PathPermissions
     rule.type == :file ? rule.path == path : (path == rule.path || path.start_with?("#{rule.path}/"))
   end
 
-  # Does this principal set (user + groups) pass a single level for path?
-  def level_allowed?(rules, user_id, group_ids, path, level)
+  # Decision for one level: [allowed, deciding selector path or nil, reason symbol].
+  def level_decision(rules, user_id, group_ids, path, level)
     # group by selector across ALL levels: any allow rule makes the selector an allow-list for every
     # level (an unchecked cell in the UI grid means "not granted")
     rules.select { |r| selector_matches?(r, path) }
          .group_by { |r| [r.path, r.type] }
          .sort_by { |(p, _), _| -p.count('/') }
-         .each do |_, group|
+         .each do |(selector, _), group|
       mine = group.select do |r|
         r.level == level &&
           ((r.principal_type == :user && r.principal_id == user_id) ||
            (r.principal_type == :group && group_ids.include?(r.principal_id)))
       end
-      return false if mine.any? { |r| r.effect == :deny }
-      return true if mine.any? { |r| r.effect == :allow }
-      return false if group.any? { |r| r.effect == :allow } # allow-list excludes this user/level
+      return [false, selector, :denied] if mine.any? { |r| r.effect == :deny }
+      return [true, selector, :allowed] if mine.any? { |r| r.effect == :allow }
+      return [false, selector, :not_listed] if group.any? { |r| r.effect == :allow } # allow-list excludes this user/level
       # deny-only selector that doesn't hit this user: fall through to less specific
     end
-    true # ponytail: default allow per plan; flip to false here for default-deny projects
+    [true, nil, :no_rule] # ponytail: default allow per plan; flip to false here for default-deny projects
+  end
+
+  # Does this principal set (user + groups) pass a single level for path?
+  def level_allowed?(rules, user_id, group_ids, path, level)
+    level_decision(rules, user_id, group_ids, path, level).first
   end
 
   # Write requires read requires view for that path.
   def allowed?(rules, user_id:, group_ids:, path:, level:)
     LEVELS.take(LEVELS.index(level) + 1).all? { |l| level_allowed?(rules, user_id, group_ids, path, l) }
+  end
+
+  REASONS = {
+    denied: 'denied by the rule on %s',
+    allowed: 'allowed by the rule on %s',
+    not_listed: '%s is a list and you are not on it',
+    no_rule: "no rule applies, so GitLab's normal permissions decide"
+  }.freeze
+
+  # { view: {allowed:, why:}, read: ..., write: ... } with the same chaining as allowed? (Write needs Read
+  # needs View). Used by the "Test as user" box; the reasons never include anything but rule paths.
+  def explain(rules, user_id:, group_ids:, path:)
+    blocked = nil
+    LEVELS.each_with_object({}) do |level, out|
+      ok, selector, why = level_decision(rules, user_id, group_ids, path, level)
+      if blocked
+        out[level] = { allowed: false, why: "needs #{blocked} first" }
+      else
+        out[level] = { allowed: ok, why: format(REASONS.fetch(why), selector) }
+        blocked = level unless ok
+      end
+    end
   end
 end

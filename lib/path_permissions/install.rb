@@ -2,6 +2,7 @@
 
 require_relative 'write_check'
 require_relative 'read_check'
+require_relative 'ui'
 
 module PathPermissions
   class IncompatibleGitLab < StandardError; end
@@ -16,6 +17,7 @@ module PathPermissions
       verify!(diff_check)
       diff_check.prepend(WriteCheck) unless diff_check.include?(WriteCheck)
       install_read_checks if read
+      UI.install if read # the page is optional: a failure is logged and never blocks boot
       warn_untested(version)
     end
 

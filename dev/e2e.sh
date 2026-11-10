@@ -240,6 +240,31 @@ record "alice: commit diff shows frontend/notes.txt" yes $(has "$DF" frontend/no
 DF=$(api $RT "$P4/repository/commits/$NOTES_SHA/diff" | python3 -c "import sys,json;print(' '.join(sorted(x['new_path'] for x in json.load(sys.stdin))))")
 record "admin: commit diff shows backend/notes.txt" yes $(has "$DF" backend/notes.txt)
 
+
+# ---------- settings page (Project Settings, overlay tier) ----------
+websession root "$(cat dev/.root_password)" $W/root.jar
+PAGE="$BASE/root/$PNAME/-/path_permissions"
+csrf() { curl -s -b "$1" "$2" | python3 -c "import sys,re;print(re.search(r'name=\"authenticity_token\" value=\"([^\"]+)\"',sys.stdin.read()).group(1))"; }
+record "settings page: admin can open it" 200 $(wcode $W/root.jar $PAGE)
+record "settings page: a Developer gets 404" 404 $(wcode $W/alice.jar $PAGE)
+case "$(curl -s -b $W/root.jar $PAGE)" in *"Path permissions"*"git clone"*) sees=yes;; *) sees=no;; esac
+record "settings page: shows the clone-limit warning" yes $sees
+CT=$(csrf $W/root.jar $PAGE)
+ac=$(curl -s -o /dev/null -w '%{http_code}' -b $W/root.jar -X POST $PAGE/add --data-urlencode "authenticity_token=$CT" -d path=uitest -d path_type=dir -d principal_type=group --data-urlencode "principal=fe-$RUN" -d effect=allow -d 'levels[]=view' -d 'levels[]=read')
+record "settings page: adding a rule through the form" 302 $ac
+record "settings page: the rule is stored (2 levels)" 2 "$(psql "SELECT count(*) FROM path_permission_rules WHERE project_id=$PID AND path='uitest'")"
+case "$(curl -s -b $W/root.jar $PAGE)" in *uitest*) shows=yes;; *) shows=no;; esac
+record "settings page: the rule is listed" yes $shows
+case "$(curl -s -b $W/root.jar "$PAGE?explain_user=$AU&explain_path=uitest/x.txt")" in *"you are not on it"*) ex=yes;; *) ex=no;; esac
+record "settings page: Test as user explains a blocked write" yes $ex
+bad=$(curl -s -o /dev/null -w '%{http_code}' -b $W/root.jar -X POST $PAGE/add --data-urlencode "authenticity_token=$CT" -d 'path=../evil' -d path_type=dir -d principal_type=group --data-urlencode "principal=fe-$RUN" -d effect=allow -d 'levels[]=view')
+record "settings page: a malformed path is refused (nothing stored)" 0 "$(psql "SELECT count(*) FROM path_permission_rules WHERE project_id=$PID AND path LIKE '%evil%'")"
+rc=$(curl -s -o /dev/null -w '%{http_code}' -b $W/root.jar -X POST $PAGE/remove --data-urlencode "authenticity_token=$CT" -d path=uitest -d path_type=dir -d principal_type=group -d "principal_id=$FEG")
+record "settings page: removing the rule" 0 "$(psql "SELECT count(*) FROM path_permission_rules WHERE project_id=$PID AND path='uitest'")"
+record "settings page: changes are in the audit log" 2 "$(psql "SELECT count(*) FROM path_permission_audits WHERE project_id=$PID AND action IN ('add_rule','delete_rule')")"
+nc=$(curl -s -o /dev/null -w '%{http_code}' -X POST $PAGE/add -d path=x)
+[ "$nc" = 200 ] && v=accepted || v=refused
+record "settings page: a request without a session or CSRF token is refused (HTTP $nc)" refused $v
 fi
 # ---------- revocation, disabled project, fail closed ----------
 api $RT -X DELETE $BASE/api/v4/groups/$FEG/members/$AID >/dev/null
