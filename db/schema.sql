@@ -28,3 +28,8 @@ CREATE TABLE IF NOT EXISTS path_permission_audits (
   after_state jsonb,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Tables are created by a superuser, but Rails connects as the application role (Omnibus: gitlab).
+-- Without this grant the add-on fails closed and rejects EVERY push. Run with: psql -v app_role=gitlab
+GRANT SELECT, INSERT, UPDATE, DELETE ON path_permission_settings, path_permission_rules, path_permission_audits TO :"app_role";
+GRANT USAGE, SELECT ON SEQUENCE path_permission_rules_id_seq, path_permission_audits_id_seq TO :"app_role";

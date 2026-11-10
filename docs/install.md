@@ -3,7 +3,7 @@
 Omnibus example, on the GitLab server, **staging first**:
 
 1. Copy `lib/` to `/opt/vela-path-permissions/lib/` (or set `VELA_PP_ROOT`).
-2. Create tables: `gitlab-psql -f db/schema.sql` (back up first).
+2. Create tables: `gitlab-psql -v app_role=gitlab -f db/schema.sql` (back up first; `app_role` = the DB user Rails connects as. A missing grant rejects every push).
 3. Copy `overlay/zz_path_permissions.rb` to `/opt/gitlab/embedded/service/gitlab-rails/config/initializers/`.
 4. `gitlab-ctl reconfigure && gitlab-ctl restart`. Boot fails loudly if GitLab no longer exposes `DiffCheck#validations_for_path`.
 5. Enable a project: `INSERT INTO path_permission_settings (project_id, enabled) VALUES (<id>, true);` then add rules.

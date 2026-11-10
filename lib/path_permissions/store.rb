@@ -10,6 +10,8 @@ module PathPermissions
 
     def rules_for(project_id)
       db = ::ApplicationRecord
+      # No tables = add-on not installed yet, so no project can be enabled; keep native behaviour.
+      return unless db.connection.table_exists?('path_permission_settings')
       return unless db.connection.select_value(db.sanitize_sql_array(
         ['SELECT enabled FROM path_permission_settings WHERE project_id = ?', project_id]
       )) # ponytail: one query per push; add request-store caching if it shows up in profiles
