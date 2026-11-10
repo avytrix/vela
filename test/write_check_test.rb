@@ -88,6 +88,67 @@ class WriteCheckTest < Minitest::Test
     assert_equal P::WriteCheck::UNVERIFIABLE, e.message
   end
 
+  # A merge of someone else's backend change: per-commit paths are empty (all-parents diff), but the
+  # branch tree changes under backend/.
+  def landing(branch, net_paths, user: FakeUser.new(1, false, [101]), trees: { 'a' * 40 => 't1', 'b' * 40 => 't2' })
+    P::Store.define_singleton_method(:rules_for) { |_id| RULES }
+    P::Store.define_singleton_method(:group_ids_for) { |u| u.groups }
+    project = FakeProject.new(7, 'main', FakeRepo.new(trees, net_paths))
+    Gitlab::Checks::DiffCheck.new(project: project, user_access: FakeAccess.new(user), changed_paths: [],
+                                  branch: branch).validate!
+  end
+
+  def test_merge_landing_foreign_change_on_default_branch_is_rejected
+    assert_raises(Forbidden) { landing('main', [FakePath.new(:MODIFIED, 'backend/api.rb')]) }
+    landing('main', [FakePath.new(:MODIFIED, 'frontend/app.js')])
+  end
+
+  def test_protected_branch_is_checked_but_plain_feature_branch_is_not
+    assert_raises(Forbidden) { landing('release', [FakePath.new(:MODIFIED, 'backend/api.rb')]) }
+    landing('feature/x', [FakePath.new(:MODIFIED, 'backend/api.rb')])
+  end
+
+  def test_admin_may_land_anything
+    landing('main', [FakePath.new(:MODIFIED, 'backend/api.rb')], user: FakeUser.new(3, true, []))
+  end
+
+  def test_empty_listing_for_different_trees_is_unverifiable
+    e = assert_raises(Forbidden) { landing('main', []) }
+    assert_equal P::WriteCheck::UNVERIFIABLE, e.message
+    e = assert_raises(Forbidden) { landing('main', [FakePath.new(:MODIFIED, 'x')], trees: {}) }
+    assert_equal P::WriteCheck::UNVERIFIABLE, e.message
+  end
+
+  def test_same_tree_means_nothing_to_check
+    landing('main', [], trees: { 'a' * 40 => 't1', 'b' * 40 => 't1' })
+  end
+
+  def test_unreadable_rules_reject_even_a_push_with_no_new_commits
+    P::Store.define_singleton_method(:rules_for) { |_id| raise 'db down' }
+    project = FakeProject.new(9, 'main', FakeRepo.new({}, []))
+    assert_raises(Forbidden) do
+      Gitlab::Checks::DiffCheck.new(project: project, user_access: FakeAccess.new(FakeUser.new(1, false, [])),
+                                    changed_paths: [], branch: 'main').validate!
+    end
+  end
+
+  def tag_push(net_paths, new_commits, user: FakeUser.new(1, false, [101]))
+    P::Store.define_singleton_method(:rules_for) { |_id| RULES }
+    P::Store.define_singleton_method(:group_ids_for) { |u| u.groups }
+    project = FakeProject.new(7, 'main', FakeRepo.new({ 'b' * 40 => 't2' }, net_paths, new_commits))
+    Gitlab::Checks::DiffCheck.new(project: project, user_access: FakeAccess.new(user), changed_paths: [],
+                                  tag: 'v1').validate!
+  end
+
+  def test_annotated_tag_carrying_a_forbidden_commit_is_rejected
+    assert_raises(Forbidden) { tag_push([FakePath.new(:MODIFIED, 'backend/api.rb')], [:c1]) }
+    tag_push([FakePath.new(:MODIFIED, 'frontend/app.js')], [:c1])
+  end
+
+  def test_tag_on_an_existing_commit_is_not_blocked
+    tag_push([FakePath.new(:MODIFIED, 'backend/api.rb')], [])
+  end
+
   def test_boot_guard_refuses_when_hook_is_gone
     bare = Class.new
     assert_raises(P::IncompatibleGitLab) { P::Install.verify!(bare) }

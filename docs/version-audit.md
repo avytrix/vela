@@ -11,7 +11,10 @@ Status legend: **VERIFIED** = read in source at this tag; **UNVERIFIED** = needs
 | `Checks::DiffCheck#validate!` iterates `find_changed_paths(commits, merge_commit_diff_mode: :all_parents)` over **all newly introduced commits** (not net diff) and calls `validations_for_path`; it is an explicit **EE injection point returning `[]` in CE** (`lib/gitlab/checks/diff_check.rb:12-52`). | VERIFIED |
 | `Git::ChangedPath` exposes `status, path, old_path, old_mode, new_mode, commit_id` => renames (src+dest), deletes, modes, gitlinks are all checkable. | VERIFIED |
 | `DiffCheck` returns early for ref deletions and non-branch/tag refs (e.g. `refs/notes`, custom refs) -> must be covered separately (deny unsupported namespaces). | VERIFIED |
-| Web/API/Web IDE commits go through Gitaly `UserCommitFiles`, which runs hooks that call back to Rails `/internal/allowed` / `pre_receive`. | UNVERIFIED (needs instance test) |
+| API commits (Gitaly `UserCommitFiles`) run the same check: an API commit to a forbidden path returns HTTP 400. The web editor and Web IDE use the same commit machinery but were not tested separately. | VERIFIED for API, UNTESTED for web editor |
+| `new_commits(newrev)` returns **nothing for an annotated tag** push (newrev is the tag object). A commit smuggled in through a tag was never checked and then counted as already present. The overlay resolves the tag to its commit and checks it. | VERIFIED live (bypass reproduced, then fixed) |
+| `find_changed_paths` with `:all_parents` makes a **merge commit show no paths** when it lands another branch's change. A Developer could merge someone else's `backend/` change onto `main`. The overlay also diffs old tip tree vs new tip tree on the default and protected branches. | VERIFIED live (bypass reproduced, then fixed) |
+| `Git::Repository#find_changed_paths` rescues Gitaly errors and returns `[]` (fail-open inside GitLab). The branch check treats an empty answer for differing trees as unverifiable. The per-commit check cannot tell. | VERIFIED in source |
 
 ## Read path (hiding)
 | Finding | Status |

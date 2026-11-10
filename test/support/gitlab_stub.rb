@@ -11,12 +11,28 @@ module Gitlab
 
   module Checks
     class DiffCheck
-      attr_reader :project, :user_access, :changed_paths
+      attr_reader :project, :user_access, :changed_paths, :oldrev, :newrev, :branch_name
 
-      def initialize(project:, user_access:, changed_paths:)
+      def initialize(project:, user_access:, changed_paths:, branch: nil, tag: nil, oldrev: 'a' * 40, newrev: 'b' * 40)
         @project = project
         @user_access = user_access
         @changed_paths = changed_paths
+        @branch_name = branch
+        @tag = tag
+        @oldrev = oldrev
+        @newrev = newrev
+      end
+
+      def branch_ref?
+        !@branch_name.nil?
+      end
+
+      def tag_ref?
+        !@tag.nil?
+      end
+
+      def commits
+        []
       end
 
       def validate!
@@ -31,6 +47,14 @@ module Gitlab
       end
 
       private
+
+      def update?
+        true
+      end
+
+      def deletion?
+        false
+      end
 
       def should_run_validations?
         validations_for_path.present?
@@ -49,7 +73,40 @@ class Object
   end
 end
 
-FakeProject = Struct.new(:id)
+module Gitlab
+  module Git
+    DiffTree = Struct.new(:left_tree_id, :right_tree_id)
+  end
+end
+FakeCommit = Struct.new(:tree_id) do
+  def id
+    'c' * 40
+  end
+end
+# net_paths: what GitLab returns for the old-tip vs new-tip tree diff ([] simulates a swallowed error).
+FakeRepo = Struct.new(:trees, :net_paths, :tag_new_commits) do
+  def raw_repository
+    self
+  end
+
+  def commit(rev)
+    trees.key?(rev) ? FakeCommit.new(trees[rev]) : nil
+  end
+
+  def new_commits(_id)
+    tag_new_commits || []
+  end
+
+  def find_changed_paths(_objects, **_opts)
+    net_paths
+  end
+end
+class ProtectedBranch
+  def self.protected?(_project, name)
+    name == 'release'
+  end
+end
+FakeProject = Struct.new(:id, :default_branch, :repository)
 FakeUser = Struct.new(:id, :admin, :groups, :owner) do
   def admin?
     admin

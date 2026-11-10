@@ -9,7 +9,7 @@
 
 Built and maintained by **[Avytrix Technologies](https://avytrix.dev/?utm_source=vela&utm_medium=docs&utm_campaign=readme)**. Need help shipping? [Hire the team behind it](#work-with-avytrix).
 
-> **Early days.** Write enforcement is built and tested against a stand-in for GitLab. It has not been proven on a live GitLab yet, so do not rely on it in production. See [Status](#status).
+> **Early days.** Write enforcement passes 23 end-to-end tests on a real GitLab CE 19.0.2 ([results](./docs/e2e-results.md)), but that is the only version tested, and reading is not hidden yet. Try it on staging first. See [Status](#status).
 
 ## Sponsoring is what keeps this free
 
@@ -65,7 +65,7 @@ rules:
 | Part | State |
 | ---- | ----- |
 | Rule engine (who may do what to which path) | Built and tested |
-| Write enforcement on push (GitLab CE 19.0.x) | Built. Tested against a stand-in. Live end-to-end tests are next |
+| Write enforcement on push, web edit, API commit, merge and tag (GitLab CE 19.0.x) | Built. 23 live end-to-end tests pass on CE 19.0.2 |
 | Hiding paths in the GitLab web UI, API and search | Planned |
 | Settings page under Project Settings | Planned |
 | Other GitLab CE versions, Docker, Helm, source installs | Planned |
@@ -110,6 +110,26 @@ vela fails closed. If it cannot read its rules, it rejects the push. If a GitLab
 upgrade removes the hook it relies on, GitLab refuses to boot rather than run
 unprotected.
 
+## Install
+
+A step-by-step guide for Omnibus, Docker, source and Kubernetes installs is in
+**[docs/install.md](./docs/install.md)**. In short:
+
+1. Back up GitLab.
+2. Copy `lib/` and one initializer file onto the server. No GitLab files are edited.
+3. Create three tables with `db/schema.sql`.
+4. Restart GitLab and check that vela loaded.
+5. Enable one test project, add rules, and test with a real push.
+
+Nothing is restricted until you enable a project and add rules.
+
+## Use it with an AI agent
+
+Want an agent to do the install and set the permissions for you? Point it at
+[`docs/agent-guide.md`](./docs/agent-guide.md). It is a checklist with approval gates,
+a backup step, a dry-run of the rules, real push tests and a plain report. Agents
+working on vela's own code should read [`AGENTS.md`](./AGENTS.md).
+
 ## Try it locally
 
 You need Docker (Colima works too). This starts a throwaway GitLab CE 19.0.2 with vela loaded:
@@ -120,16 +140,16 @@ dev/up.sh                # first boot takes 5 to 10 minutes
 docker exec -i vela-gitlab-ce gitlab-psql -v app_role=gitlab -f - < db/schema.sql
 ```
 
-The instance has no mirrors, webhooks or email. Install notes for a real server
-are in [docs/install.md](./docs/install.md). Read them as untested for now.
+The instance has no mirrors, webhooks or email. `dev/e2e.sh` then runs the end-to-end
+suite against it with real `git push`, API commits and merges.
 
 ## Develop
 
 Ruby 3.3 or newer. There are no gems to install.
 
 ```bash
-bin/test                 # all tests
-ruby test/evaluator_test.rb
+bin/test                 # all unit tests
+dev/e2e.sh               # live tests against the local GitLab (needs Docker)
 ```
 
 The design notes and what we checked in GitLab's source are in

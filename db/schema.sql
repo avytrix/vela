@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS path_permission_settings (
 CREATE TABLE IF NOT EXISTS path_permission_rules (
   id bigserial PRIMARY KEY,
   project_id bigint NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  path text NOT NULL CHECK (path <> '' AND path !~ '^/' AND path !~ '//' AND path !~ '(^|/)\.\.?(/|$)'),
+  path text NOT NULL CHECK (path <> '' AND path !~ '^/' AND path !~ '//' AND path !~ '/$' AND path !~ '(^|/)\.\.?(/|$)'),
   path_type text NOT NULL CHECK (path_type IN ('file', 'dir')),
   principal_type text NOT NULL CHECK (principal_type IN ('user', 'group')),
   principal_id bigint NOT NULL,
