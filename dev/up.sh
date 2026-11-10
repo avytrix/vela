@@ -17,6 +17,8 @@ OVERLAY_RB="require 'fileutils'
     FileUtils.cp('/opt/vela-path-permissions/overlay/zz_path_permissions.rb', '/opt/gitlab/embedded/service/gitlab-rails/config/initializers/zz_path_permissions.rb')"
 # Linux package installs only run global server hooks once custom_hooks_dir is set (GitLab docs: server hooks).
 HOOKS_RB="gitaly['configuration'] = { hooks: { custom_hooks_dir: '/var/opt/gitlab/gitaly/custom_hooks' } }"
+# Before 16.x the setting was a plain key.
+[ "${TAG%%.*}" -lt 16 ] && HOOKS_RB="gitaly['custom_hooks_dir'] = '/var/opt/gitlab/gitaly/custom_hooks'"
 [ "${VELA_OVERLAY:-1}" = 1 ] && HOOKS_RB="" || { OVERLAY_RB=""; OVERLAY_MOUNTS=(-v "$PWD/server-hook:/opt/vela-path-permissions/server-hook:ro" -v "$PWD/lib:/opt/vela-path-permissions/lib:ro"); }
 
 docker run -d --name "$NAME" --hostname localhost --shm-size 256m \
