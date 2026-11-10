@@ -1,6 +1,6 @@
 # End-to-end results
 
-GitLab CE 19.0.2 (Docker, arm64), vela commit 897efac, 2026-11-10. Script: `dev/e2e.sh`.
+GitLab CE 19.0.2 (Docker, arm64), vela commit 8260e1b, 2026-11-10. Script: `dev/e2e.sh`.
 
 | Result | Case | Expected | Got |
 | --- | --- | --- | --- |
