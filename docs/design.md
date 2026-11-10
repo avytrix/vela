@@ -1,4 +1,4 @@
-# Design — portable overlay add-on
+# Design: portable overlay add-on
 
 Goal: work on any GitLab CE (Omnibus, Docker, Helm, source), any host. So: **no forked source, no per-file patches.**
 

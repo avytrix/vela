@@ -1,4 +1,4 @@
-# Install (tier 1: write enforcement) — NOT yet proven on a live GitLab
+# Install (tier 1: write enforcement), NOT yet proven on a live GitLab
 
 Omnibus example, on the GitLab server, **staging first**:
 

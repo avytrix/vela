@@ -1,7 +1,7 @@
-# Version audit — GitLab CE v19.0.2
+# Version audit: GitLab CE v19.0.2
 
 Source: `gitlab-foss` tag `v19.0.2` (CE mirror, no `ee/` dir). Gitaly 19.0.2, GitLab Shell 14.51.0.
-Target instance: Omnibus `gitlab-ce=19.0.2-ce.0` (see `gitlab-gcp-iac-eop-test`).
+Target instance: Omnibus `gitlab-ce=19.0.2-ce.0`.
 Status legend: **VERIFIED** = read in source at this tag; **UNVERIFIED** = needs a running instance.
 
 ## Write path (enforcement)

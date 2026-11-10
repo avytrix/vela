@@ -1,0 +1,6 @@
+# Gitleaks config for the Security workflow. Extends the default rule set.
+# Keep any allowlist short and specific: an entry here is a claim that the
+# matched string is not a credential.
+
+[extend]
+useDefault = true

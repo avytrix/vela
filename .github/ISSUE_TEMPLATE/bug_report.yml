@@ -1,0 +1,58 @@
+name: Bug report
+description: Report a bug so we can fix it
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug! Please search existing issues first to avoid duplicates.
+        If the bug lets someone push or read something they should not be able to, do not file it here. Use the private security report instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and its impact.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps, the rules involved (path, user or group, level), and what you pushed or opened.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: input
+    id: gitlab-version
+    attributes:
+      label: GitLab CE version and install method
+      placeholder: e.g. 19.0.2, Omnibus package
+    validations:
+      required: true
+  - type: input
+    id: addon-version
+    attributes:
+      label: vela version or commit
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant lines from gitlab-rails production.log. Remove anything private.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmation
+      options:
+        - label: I searched existing issues and this is not a duplicate
+          required: true
+        - label: This is not a security vulnerability (those go through SECURITY.md)
+          required: true
