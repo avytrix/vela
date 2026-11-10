@@ -1,0 +1,5 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Runs every test in test/. Plain minitest, no bundler needed.
+Dir[File.join(__dir__, '..', 'test', '*_test.rb')].sort.each { |f| require File.expand_path(f) }
