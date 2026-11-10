@@ -11,8 +11,13 @@ NAME=vela-upgrade; PORT=$((20000 + RANDOM % 20000)); OUT=docs/compat/package-upg
 cleanup() { docker rm -f -v $NAME >/dev/null 2>&1; for v in config data logs; do docker volume rm -f vela_upgrade_$v >/dev/null 2>&1; done; }
 trap cleanup EXIT
 mkdir -p docs/compat
+# "healthy" and a 200 on the sign-in page are not enough after a package upgrade: the web server restarts
+# at the end. Also wait until the API answers with real JSON three times in a row.
+api_ready() { local ok=0; for i in $(seq 1 120); do
+    if [ "$(curl -s http://localhost:$PORT/api/v4/projects | head -c1)" = "[" ]; then ok=$((ok+1)); [ $ok -ge 3 ] && break; else ok=0; fi; sleep 5; done; }
 ready() { for i in $(seq 1 120); do [ "$(docker inspect -f '{{.State.Health.Status}}' $NAME 2>/dev/null)" = healthy ] && break; sleep 10; done
-          for i in $(seq 1 90); do [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:$PORT/users/sign_in)" = 200 ] && break; sleep 5; done; }
+          for i in $(seq 1 90); do [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:$PORT/users/sign_in)" = 200 ] && break; sleep 5; done
+          api_ready; sleep 20; }
 state() { docker exec $NAME sh -c 'cat /opt/gitlab/embedded/service/gitlab-rails/VERSION; ls /opt/gitlab/embedded/service/gitlab-rails/config/initializers/zz_path_permissions.rb 2>&1 | tail -1'; docker exec $NAME gitlab-rails runner 'puts Gitlab::Checks::DiffCheck.ancestors.first, Repository.ancestors.first' 2>&1 | grep -v '^\s*from' | tr '\n' ' '; }
 step() { echo "## $1"; echo; echo '```'; shift; "$@" 2>&1 | tail -${TAIL:-12}; echo '```'; echo; }
 
