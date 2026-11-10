@@ -18,11 +18,11 @@ Per-version results: [compat/](./compat/README.md). How to install: [install.md]
 
 ## Not tested (please try these)
 
-- **GitLab 15.11, 16.11, 17.11 overlay, 18.x** and every other version. The 17.11 overlay run was stopped before it finished.
+- **Overlay re-run on the final code** for 16.11 to 19.5 (they ran before the last fix; the weekly matrix does it). Source, Helm and Praefect installs.
 - **Source installs and Helm/Kubernetes.** The install guide describes them, but they were never run.
 - **Gitaly Cluster (Praefect) and multi-node setups.** The hook must be on every Gitaly node.
 - **A GitLab downgrade.** Only reasoned about (the add-on tables are separate from GitLab's), never run.
-- **Package upgrades on a real Linux package host.** Tested with Docker image upgrades, where `gitlab.rb` restored the overlay; a `dpkg`/`rpm` upgrade was not run.
+- **Full suite after a real `apt` upgrade.** The overlay stayed installed and loaded through upgrade and downgrade, but the suite did not finish in the container (fixture setup failed, cause not found).
 - **The web editor and Web IDE** as separate paths. API commits and merges were tested and share the same commit code.
 - **Large repositories and load.** The hook adds about 2.5 s to a push on a small VM. Nothing was measured at scale.
 - Pushes by **deploy keys and CI job tokens** to a project with rules. A deploy key has no user, so the overlay and hook both reject it while rules exist. That is deliberate and untested against a real setup.

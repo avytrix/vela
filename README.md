@@ -69,7 +69,7 @@ rules:
 | Hiding paths in GitLab: file lists, file content, raw, blame, search, diffs, API and GraphQL | Built and tested live (commit history and some export routes are not filtered, see below) |
 | Server hook tier (any CE, any install method) | Built. 23 live write cases pass on CE 19.0.2 and 19.5.3 with no overlay installed |
 | Upgrades | Overlay survived an in-place GitLab upgrade 19.0.2 to 19.0.11 (68 of 68). See [docs/compat/](./docs/compat/) |
-| Compatibility matrix on 15.11 to 19.5 | Workflow added and run by hand for 17.11, 19.0, 19.5. Other versions untested |
+| Compatibility matrix on 15.11 to 19.5 | Hook tier 23 of 23 and overlay 68 of 68 on 16.11 to 19.5 (15.11: 69 of 69). See docs/compat/ |
 | Settings page under Project Settings (Tier B) | Built. Passes live on CE 19.0.2, 19.0.11 and 19.5.3. Rules can also be set with SQL (Tier B) or a CI/CD variable (Tier A) |
 
 ## The one limit you must know about
