@@ -29,6 +29,11 @@ else
 fi
 
 echo "-- Tier B: overlay (write + hide paths)"
+if command -v gitlab-psql >/dev/null 2>&1 && gitlab-psql -tA -c "select 1 from pg_tables where tablename='path_permission_settings'" 2>/dev/null | grep -q 1; then
+  gitlab-psql -tA -c "select has_table_privilege('gitlab','path_permission_settings','SELECT') and has_table_privilege('gitlab','path_permission_rules','SELECT')" 2>/dev/null | grep -q t \
+    && ok "database role can read the add-on tables" \
+    || miss "database role cannot read the add-on tables" "re-run db/schema.sql with -v app_role=<your Rails DB user>. Until then the overlay rejects pushes and hides repositories on EVERY project"
+fi
 if [ -f "$RAILS_DIR/config/initializers/zz_path_permissions.rb" ]; then
   ok "initializer present"
   if [ "$1" = "--deep" ]; then

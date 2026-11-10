@@ -15,6 +15,8 @@ mkdir -p docs/compat
 NAME=$NAME VOL=vela_compat_$SLUG GITLAB_TAG=$TAG HTTP_PORT=$PORT SSH_PORT=$((PORT+1)) VELA_OVERLAY=$OVERLAY dev/up.sh >/dev/null 2>&1 || { echo "could not start $TAG"; exit 2; }
 for i in $(seq 1 120); do [ "$(docker inspect -f '{{.State.Health.Status}}' $NAME 2>/dev/null)" = healthy ] && break; sleep 10; done
 [ "$(docker inspect -f '{{.State.Health.Status}}' $NAME 2>/dev/null)" = healthy ] || { echo "$TAG never became healthy"; docker logs --tail 20 $NAME; exit 2; }
+# Some versions (19.5) report "healthy" before the web server answers; wait for it.
+for i in $(seq 1 90); do [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:$PORT/users/sign_in)" = 200 ] && break; sleep 5; done
 if [ "$TIER" = overlay ]; then
   docker exec -i $NAME gitlab-psql -v app_role=gitlab -f - < db/schema.sql >/dev/null 2>&1
   docker exec $NAME gitlab-ctl restart puma >/dev/null 2>&1

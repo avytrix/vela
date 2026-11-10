@@ -26,7 +26,7 @@ docker run -d --name "$NAME" --hostname localhost --shm-size 256m \
     external_url 'http://localhost:${HTTP_PORT}'
     gitlab_rails['gitlab_shell_ssh_port'] = ${SSH_PORT}
     gitlab_rails['usage_ping_enabled'] = false
-    puma['worker_processes'] = 0
+    puma['worker_processes'] = ${PUMA_WORKERS:-0}
     sidekiq['concurrency'] = 5
     postgresql['shared_buffers'] = '256MB'
     prometheus_monitoring['enable'] = false

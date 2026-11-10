@@ -194,3 +194,65 @@ class HookTest < Minitest::Test
     assert_equal H::DENIED, push
   end
 end
+
+# The API client retries brief outages, then fails closed. A tiny local HTTP server answers per script.
+class ApiRetryTest < Minitest::Test
+  H = PathPermissions::Hook
+
+  def serve(statuses)
+    require 'socket'
+    server = TCPServer.new('127.0.0.1', 0)
+    hits = []
+    thread = Thread.new do
+      statuses.each do |code|
+        client = server.accept
+        while (line = client.gets) && line != "\r\n"; end # drain the request headers
+        hits << code
+        body = code == 200 ? '{"ok":true}' : 'x'
+        client.write "HTTP/1.1 #{code} X\r\nContent-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n#{body}"
+        client.close
+      end
+    end
+    [server, hits, thread]
+  end
+
+  def api(server)
+    delays = []
+    [H::Api.new("http://127.0.0.1:#{server.addr[1]}", 't', sleeper: ->(d) { delays << d }), delays]
+  end
+
+  def test_a_brief_5xx_is_retried_and_then_succeeds
+    server, hits, thread = serve([502, 503, 200])
+    client, delays = api(server)
+    assert_equal({ 'ok' => true }, client.get('/x'))
+    assert_equal [502, 503, 200], hits
+    assert_equal [0.5, 1.5], delays
+    thread.join(5)
+  end
+
+  def test_persistent_5xx_fails_closed_after_three_attempts
+    server, hits, thread = serve([500, 500, 500])
+    client, = api(server)
+    assert_raises(H::Deny) { client.get('/x') }
+    assert_equal 3, hits.size
+    thread.join(5)
+  end
+
+  def test_a_wrong_token_is_not_retried
+    server, hits, thread = serve([401])
+    client, = api(server)
+    assert_raises(H::Deny) { client.get('/x') }
+    assert_equal [401], hits
+    thread.join(5)
+  end
+
+  def test_connection_refused_is_retried_then_fails_closed
+    server = TCPServer.new('127.0.0.1', 0)
+    port = server.addr[1]
+    server.close
+    delays = []
+    client = H::Api.new("http://127.0.0.1:#{port}", 't', sleeper: ->(d) { delays << d })
+    assert_raises(H::Deny) { client.get('/x') }
+    assert_equal 2, delays.size
+  end
+end

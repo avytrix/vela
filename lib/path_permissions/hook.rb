@@ -41,24 +41,48 @@ module PathPermissions
     end
 
     class Api
-      def initialize(base, token)
+      ATTEMPTS = 3
+      DELAYS = [0.5, 1.5].freeze # seconds before retry 2 and 3
+
+      def initialize(base, token, sleeper: Kernel.method(:sleep))
         @base = URI(base.sub(%r{/+\z}, ''))
         @token = token
+        @sleeper = sleeper
       end
 
-      # Returns parsed JSON, or nil for 404. Anything else that is not 200 raises (fail closed).
+      # Returns parsed JSON, or nil for 404. A brief outage (GitLab restarting a web worker, a 5xx, a timeout)
+      # is retried; anything still wrong after that raises, so the push is rejected (fail closed).
       def get(path)
+        attempt = 0
+        begin
+          attempt += 1
+          fetch(path)
+        rescue Retry
+          raise Deny, UNVERIFIABLE if attempt >= ATTEMPTS
+
+          @sleeper.call(DELAYS[attempt - 1])
+          retry
+        end
+      end
+
+      Retry = Class.new(StandardError)
+
+      private
+
+      def fetch(path)
         http = Net::HTTP.new(@base.host, @base.port)
         http.use_ssl = @base.scheme == 'https'
         http.open_timeout = 5
         http.read_timeout = 10
-        req = Net::HTTP::Get.new("#{@base.path}/api/v4#{path}", 'PRIVATE-TOKEN' => @token)
-        res = http.request(req)
+        res = http.request(Net::HTTP::Get.new("#{@base.path}/api/v4#{path}", 'PRIVATE-TOKEN' => @token))
         return nil if res.code == '404'
-        raise Deny, UNVERIFIABLE unless res.code == '200'
+        raise Retry if res.code.start_with?('5') || res.code == '429'
+        raise Deny, UNVERIFIABLE unless res.code == '200' # 401/403: a wrong token will not fix itself
 
         JSON.parse(res.body)
-      rescue SystemCallError, Timeout::Error, JSON::ParserError, SocketError, IOError
+      rescue SystemCallError, Timeout::Error, SocketError, IOError
+        raise Retry
+      rescue JSON::ParserError
         raise Deny, UNVERIFIABLE
       end
     end

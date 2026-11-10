@@ -45,7 +45,11 @@ if [ "$MODE" = hook ]; then
   docker exec $C sh -c "mkdir -p /etc/vela /var/opt/gitlab/gitaly/custom_hooks/pre-receive.d && rm -f /var/opt/gitlab/gitaly/custom_hooks/pre-receive.d/vela && cp /opt/vela-path-permissions/server-hook/vela /var/opt/gitlab/gitaly/custom_hooks/pre-receive.d/vela && chown -R git:git /var/opt/gitlab/gitaly/custom_hooks && chmod 755 /var/opt/gitlab/gitaly/custom_hooks/pre-receive.d/vela && printf 'VELA_GITLAB_URL=%s\nVELA_TOKEN=%s\n' '$BASE' '$RT' > /etc/vela/hook.env && chmod 644 /etc/vela/hook.env" || { echo "could not install the hook"; exit 2; }
 fi
 break_rules() { if [ "$MODE" = hook ]; then docker exec $C sh -c "sed -i 's/^VELA_TOKEN=.*/VELA_TOKEN=glpat-broken/' /etc/vela/hook.env"; else psql "REVOKE SELECT ON path_permission_settings FROM gitlab" >/dev/null; fi; }
-fix_rules() { if [ "$MODE" = hook ]; then docker exec $C sh -c "sed -i 's/^VELA_TOKEN=.*/VELA_TOKEN=$RT/' /etc/vela/hook.env"; else fix_rules; fi; }
+fix_rules() { if [ "$MODE" = hook ]; then docker exec $C sh -c "sed -i 's/^VELA_TOKEN=.*/VELA_TOKEN=$RT/' /etc/vela/hook.env"; else psql "GRANT SELECT ON path_permission_settings TO gitlab" >/dev/null; fi; }
+
+# A crashed earlier run must never leave the rules unreadable (that rejects every request on the instance).
+[ "$MODE" = overlay ] && fix_rules
+trap 'fix_rules >/dev/null 2>&1' EXIT
 
 mkuser() { # username -> prints "id token"
   local id pw="$(openssl rand -hex 12)Aa1!"

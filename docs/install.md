@@ -210,7 +210,7 @@ Rules to remember:
 
 To undo a rule: `DELETE FROM path_permission_rules WHERE id = ...;`. To switch a project off: `UPDATE path_permission_settings SET enabled = false WHERE project_id = 42;`.
 
-A settings page inside GitLab for managing rules is planned. Until then, the database is the interface.
+**Prefer the settings page.** With the overlay installed, open the project, then **Settings, Path permissions**. It shows the rules as a table of path and group or user against View, Read and Write, with an add form, an on/off switch, a "Test as user" box that explains which rule decided, and a change history. Only admins, Owners and Maintainers see it. The SQL below does the same thing and is what you use for scripts and for the first test.
 
 ### 8. Test it
 
@@ -322,7 +322,7 @@ Downgrades: the add-on's tables are not touched by GitLab's migrations, so they 
 ## Known limits
 
 - `git clone` and `git fetch` are not restricted. Do not rely on vela to hide secrets.
-- Only pushes, web edits and API commits are checked for **write**. Pushes to refs that are not branches or tags are not covered.
+- Only pushes, web edits, API commits, merges and tags are checked for **write**. Pushes to refs that are not branches or tags are not covered.
 - View and Read hiding covers the file browser, file content, raw, blame, search, diffs, the API and GraphQL. It does **not** cover commit history and messages, archives, `repository/blobs/:sha`, project export, or the compare endpoint. See [read-design.md](./read-design.md).
 - Tested on GitLab CE 19.0.2. See [e2e-results.md](./e2e-results.md) for exactly what was run.
 

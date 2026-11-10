@@ -49,7 +49,15 @@ A GitLab upgrade can replace files under its own directories. vela puts nothing 
 
 ## The doctor check
 
-After any upgrade, run the doctor. It tells you which tiers are active and whether anything is missing. (Planned: see [install.md](./install.md#upgrading-gitlab) for the manual commands that do the same today.)
+After any upgrade or downgrade, run `sudo bin/doctor --deep`. It is read-only. It reports which tiers are active, whether the hook can still reach GitLab's API with its token, whether the overlay initializer is still in place and loaded, and whether the database role can still read the add-on tables.
+
+## Running Tier A in production: what to know
+
+- **The hook calls GitLab's REST API** (about three to five small requests per push: the project's policy, the user, their access, and group membership). The Gitaly server must be able to reach GitLab's web address. A brief outage is retried three times (after 0.5 s and 1.5 s) before the push is rejected. A wrong token is not retried.
+- **It adds time to every push to a project that has path permissions on.** About 2.5 seconds on a small test VM. Projects without the `VELA_PATH_POLICY` variable cost one small request.
+- **Commits made inside GitLab** (API, web editor, merge button) also run the hook, and the hook then calls back into GitLab's web process. Keep at least two web workers (the default Linux package setup has them) so the nested call has a free thread. On a single-process, single-thread setup it would time out and the commit would be rejected.
+- **If GitLab's API is down, pushes to protected projects are rejected.** That is the fail-closed choice. Pushes to projects without a policy variable are also affected, because the hook must ask GitLab whether one exists.
+- **Group membership counts inherited members**, but not groups shared into another group.
 
 ## What cannot be promised
 
