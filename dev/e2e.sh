@@ -6,10 +6,13 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-export DOCKER_CONFIG="$(mktemp -d)" DOCKER_HOST="unix://$HOME/.colima/default/docker.sock"
+export DOCKER_CONFIG="$(mktemp -d)"
+[ -S "$HOME/.colima/default/docker.sock" ] && export DOCKER_HOST="${DOCKER_HOST:-unix://$HOME/.colima/default/docker.sock}"
 export GIT_TERMINAL_PROMPT=0
-BASE=http://localhost:8929
-C=vela-gitlab-ce
+BASE="${BASE:-http://localhost:8929}"
+C="${C:-vela-gitlab-ce}"
+RESULTS="${RESULTS:-docs/e2e-results.md}"
+MODE="${VELA_MODE:-overlay}"   # overlay = Rails overlay (rules in DB); hook = server hook only (rules in a CI/CD variable)
 W="$(mktemp -d)"                      # clones live here, outside the repo
 RUN=$(date +%s | tail -c 6)           # unique suffix so the script can be re-run
 PASS=0; FAIL=0; ROWS=""
@@ -37,6 +40,12 @@ RT="glpat-$(openssl rand -hex 10)"
 docker exec -e T="$RT" $C gitlab-rails runner \
   "u=User.find_by_username('root'); t=u.personal_access_tokens.build(name: 'e2e-$RUN', scopes: [:api], expires_at: 7.days.from_now); t.set_token(ENV['T']); t.save!" >/dev/null 2>&1 \
   || { echo "could not create root token"; exit 2; }
+
+if [ "$MODE" = hook ]; then
+  docker exec $C sh -c "mkdir -p /etc/vela /var/opt/gitlab/gitaly/custom_hooks/pre-receive.d && rm -f /var/opt/gitlab/gitaly/custom_hooks/pre-receive.d/vela && cp /opt/vela-path-permissions/server-hook/vela /var/opt/gitlab/gitaly/custom_hooks/pre-receive.d/vela && chown -R git:git /var/opt/gitlab/gitaly/custom_hooks && chmod 755 /var/opt/gitlab/gitaly/custom_hooks/pre-receive.d/vela && printf 'VELA_GITLAB_URL=%s\nVELA_TOKEN=%s\n' '$BASE' '$RT' > /etc/vela/hook.env && chmod 644 /etc/vela/hook.env" || { echo "could not install the hook"; exit 2; }
+fi
+break_rules() { if [ "$MODE" = hook ]; then docker exec $C sh -c "sed -i 's/^VELA_TOKEN=.*/VELA_TOKEN=glpat-broken/' /etc/vela/hook.env"; else psql "REVOKE SELECT ON path_permission_settings FROM gitlab" >/dev/null; fi; }
+fix_rules() { if [ "$MODE" = hook ]; then docker exec $C sh -c "sed -i 's/^VELA_TOKEN=.*/VELA_TOKEN=$RT/' /etc/vela/hook.env"; else fix_rules; fi; }
 
 mkuser() { # username -> prints "id token"
   local id pw="$(openssl rand -hex 12)Aa1!"
@@ -72,18 +81,26 @@ seed() { # create files as root (admin, exempt), before the add-on is switched o
 seed
 
 # Policy: fe owns frontend/ (except one file), be owns backend/, docs/ readable by both and writable by fe.
-rule() { psql "INSERT INTO path_permission_rules (project_id,path,path_type,principal_type,principal_id,level,effect) VALUES ($PID,'$1','$2','group',$3,'$4','$5')" >/dev/null; }
-psql "INSERT INTO path_permission_settings (project_id,enabled) VALUES ($PID,true)" >/dev/null
+POLICY=""
+rule() {
+  if [ "$MODE" = hook ]; then POLICY="$POLICY{\"path\":\"$1\",\"type\":\"$2\",\"principal_type\":\"group\",\"principal_id\":$3,\"level\":\"$4\",\"effect\":\"$5\"},"
+  else psql "INSERT INTO path_permission_rules (project_id,path,path_type,principal_type,principal_id,level,effect) VALUES ($PID,'$1','$2','group',$3,'$4','$5')" >/dev/null; fi
+}
+[ "$MODE" = hook ] || psql "INSERT INTO path_permission_settings (project_id,enabled) VALUES ($PID,true)" >/dev/null
 for l in view read write; do
   rule frontend dir $FEG $l allow; rule backend dir $BEG $l allow
   rule frontend/security-config.json file $FEG $l deny
 done
 for l in view read; do rule docs dir $FEG $l allow; rule docs dir $BEG $l allow; done
 rule docs dir $FEG write allow
+if [ "$MODE" = hook ]; then
+  VAL=$(python3 -c 'import json,sys;print(json.dumps(sys.argv[1]))' "{\"enabled\":true,\"rules\":[${POLICY%,}]}")
+  api $RT -X POST $BASE/api/v4/projects/$PID/variables -H 'Content-Type: application/json' -d "{\"key\":\"VELA_PATH_POLICY\",\"value\":$VAL}" >/dev/null
+fi
 
 # ---------- git helpers ----------
 clone() { # user token dir project -> clone with identity set
-  git clone -q "http://$1:$2@localhost:8929/root/$4.git" "$3" 2>/dev/null || return 1
+  git clone -q "http://$1:$2@${BASE#http://}/root/$4.git" "$3" 2>/dev/null || return 1
   g "$3" config user.name "$1"; g "$3" config user.email "$1@example.com"
 }
 PNAME=$(api $RT $BASE/api/v4/projects/$PID | json 'd["path"]')
@@ -161,7 +178,8 @@ state=$(api $RT $BASE/api/v4/projects/$PID/merge_requests/$MR | json 'd["state"]
 [ "$state" = merged ] && v=allowed || v=rejected
 record "alice merges root's MR that changes backend/ (merge HTTP $st, state $state)" rejected $v
 
-# ---------- read hiding (View and Read) ----------
+# ---------- read hiding (View and Read), overlay tier only ----------
+if [ "$MODE" = overlay ]; then
 # One root commit touching both teams' folders, so search and diffs have something to hide.
 NEEDLE="needle$RUN"
 api $RT -X POST $BASE/api/v4/projects/$PID/repository/commits -H 'Content-Type: application/json' -d "{
@@ -222,6 +240,7 @@ record "alice: commit diff shows frontend/notes.txt" yes $(has "$DF" frontend/no
 DF=$(api $RT "$P4/repository/commits/$NOTES_SHA/diff" | python3 -c "import sys,json;print(' '.join(sorted(x['new_path'] for x in json.load(sys.stdin))))")
 record "admin: commit diff shows backend/notes.txt" yes $(has "$DF" backend/notes.txt)
 
+fi
 # ---------- revocation, disabled project, fail closed ----------
 api $RT -X DELETE $BASE/api/v4/groups/$FEG/members/$AID >/dev/null
 fresh $D t14; edit $D frontend/app.js; commit $D; out=$(push $D HEAD:refs/heads/t14); record "after removal from fe group, alice edits frontend/" rejected $(verdict $?)
@@ -230,12 +249,12 @@ api $RT -X POST $BASE/api/v4/groups/$FEG/members -d "user_id=$AID&access_level=3
 O=$W/open; clone $AU $AT $O $ONAME; fresh $O o1; edit $O backend/anything.rb; commit $O; out=$(push $O HEAD:refs/heads/o1)
 record "project without path permissions keeps native behaviour" allowed $(verdict $?)
 
-psql "REVOKE SELECT ON path_permission_settings FROM gitlab" >/dev/null
-RC=$(code $AT "$P4/repository/files/frontend%2Fapp.js?ref=main")
+break_rules
+[ "$MODE" = overlay ] && RC=$(code $AT "$P4/repository/files/frontend%2Fapp.js?ref=main")
 fresh $D t15; edit $D frontend/app.js; commit $D; out=$(push $D HEAD:refs/heads/t15); rc=$?
-psql "GRANT SELECT ON path_permission_settings TO gitlab" >/dev/null
+fix_rules
 record "rules unreadable: even an allowed push is rejected (fail closed)" rejected $(verdict $rc)
-record "rules unreadable: reads fail closed too (404)" 404 $RC
+[ "$MODE" = overlay ] && record "rules unreadable: reads fail closed too (404)" 404 $RC
 fresh $D t16; edit $D frontend/app.js; commit $D; out=$(push $D HEAD:refs/heads/t16); record "after the grant is restored, pushes work again" allowed $(verdict $?)
 
 # ---------- report ----------
@@ -243,13 +262,13 @@ VER=$(docker exec $C cat /opt/gitlab/embedded/service/gitlab-rails/VERSION)
 {
   echo "# End-to-end results"
   echo
-  echo "GitLab CE $VER (Docker, arm64), vela commit $(git rev-parse --short HEAD), $(date -u +%Y-%m-%d). Script: \`dev/e2e.sh\`."
+  echo "GitLab CE $VER (Docker), tier: $MODE, vela commit $(git rev-parse --short HEAD), $(date -u +%Y-%m-%d). Script: \`dev/e2e.sh\`."
   echo
   echo "| Result | Case | Expected | Got |"; echo "| --- | --- | --- | --- |"
   printf "$ROWS"
   echo
   echo "**$PASS passed, $FAIL failed.**"
-} > docs/e2e-results.md
-echo; echo "$PASS passed, $FAIL failed (table in docs/e2e-results.md)"
+} > "$RESULTS"
+echo; echo "$PASS passed, $FAIL failed (table in $RESULTS)"
 rm -rf "$W"
 [ $FAIL -eq 0 ]

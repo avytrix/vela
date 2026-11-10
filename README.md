@@ -67,8 +67,9 @@ rules:
 | Rule engine (who may do what to which path) | Built and tested |
 | Write enforcement on push, web edit, API commit, merge and tag (GitLab CE 19.0.x) | Built and tested live |
 | Hiding paths in GitLab: file lists, file content, raw, blame, search, diffs, API and GraphQL | Built and tested live (commit history and some export routes are not filtered, see below) |
-| Settings page under Project Settings | Planned |
-| Other GitLab CE versions, Docker, Helm, source installs | Planned |
+| Server hook tier (any CE, any install method) | Built. 23 live write cases pass on CE 19.0.2 with no overlay installed |
+| Weekly compatibility matrix on 15.11 to 19.5 | Workflow added; results appear in [docs/compat/](./docs/compat/) as versions pass |
+| Settings page under Project Settings | Planned (until then, rules are database rows or a CI/CD variable) |
 
 ## The one limit you must know about
 
@@ -86,7 +87,21 @@ So use vela to keep people from changing the wrong things and to tidy what they
 see. Do not use it to keep secrets out of a repository people can clone. If you
 need that, split the secret into its own project.
 
-## How it works
+## Two tiers, so it works on any GitLab CE
+
+GitLab documents only one extension point that can block something: **global
+pre-receive server hooks**. So vela comes in two tiers ([why](./docs/portability.md)):
+
+- **Tier A, server hook.** Enforces writes on any CE version and install method (Linux
+  package, Docker, source, Helm), and survives upgrades because it lives outside GitLab's
+  files. Rules sit in a project CI/CD variable that only Maintainers and Owners can open.
+- **Tier B, overlay.** Everything in Tier A, plus **hiding paths** in the web UI, API,
+  search and diffs. It relies on GitLab internals, so it refuses to boot if GitLab changed
+  something it needs, and each version is tested before it is listed as supported.
+
+`bin/doctor` checks what is installed after any upgrade or downgrade.
+
+## How it works (Tier B)
 
 vela is an overlay, not a fork of GitLab. It is one initializer file plus a few
 small Ruby modules, and it does not patch GitLab's source.

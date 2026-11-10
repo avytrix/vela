@@ -1,0 +1,196 @@
+# frozen_string_literal: true
+
+require 'minitest/autorun'
+require 'tmpdir'
+require 'json'
+require 'open3'
+require_relative '../lib/path_permissions/hook'
+
+# Runs the real hook logic against real git repositories. New commits live in a work repo and reach the
+# bare repo only through GIT_ALTERNATE_OBJECT_DIRECTORIES, like a quarantine during a push.
+class HookTest < Minitest::Test
+  H = PathPermissions::Hook
+  ZERO = H::ZERO
+
+  class FakeApi
+    attr_accessor :policy, :users, :owners, :members, :fail
+
+    def initialize
+      @users = { 'alice' => { 'id' => 1, 'is_admin' => false } }
+      @owners = []
+      @members = { 101 => [1] }
+    end
+
+    def get(path)
+      raise H::Deny, H::UNVERIFIABLE if fail
+
+      case path
+      when %r{\A/projects/\d+/variables/VELA_PATH_POLICY} then policy && { 'value' => policy }
+      when %r{\A/users\?username=(.*)\z} then [users[Regexp.last_match(1)]].compact
+      when %r{\A/projects/\d+/members/all/(\d+)\z} then owners.include?(Regexp.last_match(1).to_i) ? { 'access_level' => 50 } : { 'access_level' => 30 }
+      when %r{\A/groups/(\d+)/members/all/(\d+)\z} then members[Regexp.last_match(1).to_i].to_a.include?(Regexp.last_match(2).to_i) ? {} : nil
+      end
+    end
+  end
+
+  def sh(dir, *args)
+    out, err, st = Open3.capture3('git', '-c', 'user.name=t', '-c', 'user.email=t@example.com', *args, chdir: dir)
+    raise "git #{args.join(' ')}: #{err}" unless st.success?
+
+    out.strip
+  end
+
+  def write(path, body = rand.to_s)
+    full = File.join(@work, path)
+    FileUtils.mkdir_p(File.dirname(full))
+    File.write(full, body)
+    sh(@work, 'add', '-A')
+  end
+
+  def policy(extra = [])
+    rules = %w[view read write].map { |l| { path: 'frontend', type: 'dir', principal_type: 'group', principal_id: 101, level: l, effect: 'allow' } }
+    rules += %w[view read write].map { |l| { path: 'backend', type: 'dir', principal_type: 'group', principal_id: 102, level: l, effect: 'allow' } }
+    JSON.generate(enabled: true, rules: rules + extra)
+  end
+
+  def setup
+    require 'fileutils'
+    @root = Dir.mktmpdir
+    @bare = File.join(@root, 'bare.git')
+    @work = File.join(@root, 'work')
+    sh(@root, 'init', '-q', '--bare', '-b', 'main', @bare)
+    sh(@root, 'init', '-q', '-b', 'main', @work)
+    write('frontend/app.js'); write('backend/api.rb'); write('README.md')
+    sh(@work, 'commit', '-q', '-m', 'base')
+    sh(@work, 'push', '-q', @bare, 'main')
+    @api = FakeApi.new
+    @api.policy = policy
+    ENV['GIT_ALTERNATE_OBJECT_DIRECTORIES'] = File.join(@work, '.git', 'objects')
+  end
+
+  def teardown
+    ENV.delete('GIT_ALTERNATE_OBJECT_DIRECTORIES')
+    FileUtils.rm_rf(@root)
+  end
+
+  def head
+    sh(@work, 'rev-parse', 'HEAD')
+  end
+
+  def push(ref = 'refs/heads/feature', old = ZERO, user: 'alice')
+    H.check(env: { 'GL_REPOSITORY' => 'project-7', 'GL_USERNAME' => user },
+            changes: [[old, head, ref]], git: H::Git.new(@bare), api: @api)
+  end
+
+  def test_allowed_change_passes
+    write('frontend/app.js'); sh(@work, 'commit', '-q', '-m', 'x')
+    assert_nil push
+  end
+
+  def test_forbidden_change_is_rejected_without_naming_a_hidden_path
+    write('backend/api.rb'); sh(@work, 'commit', '-q', '-m', 'x')
+    assert_equal H::DENIED, push
+  end
+
+  def test_intermediate_change_reverted_later_is_still_rejected
+    write('backend/api.rb'); sh(@work, 'commit', '-q', '-m', 'bad')
+    sh(@work, 'checkout', 'HEAD~1', '--', 'backend/api.rb'); sh(@work, 'commit', '-q', '-m', 'revert')
+    assert_equal H::DENIED, push
+  end
+
+  def test_rename_checks_both_sides
+    sh(@work, 'mv', 'frontend/app.js', 'backend/app.js'); sh(@work, 'commit', '-q', '-m', 'mv')
+    assert_equal H::DENIED, push
+  end
+
+  def test_deleting_a_forbidden_file_is_rejected
+    sh(@work, 'rm', '-q', 'backend/api.rb'); sh(@work, 'commit', '-q', '-m', 'rm')
+    assert_equal H::DENIED, push
+  end
+
+  def test_unrestricted_path_is_native
+    write('README.md'); sh(@work, 'commit', '-q', '-m', 'x')
+    assert_nil push
+  end
+
+  def test_admin_and_owner_are_never_locked_out
+    write('backend/api.rb'); sh(@work, 'commit', '-q', '-m', 'x')
+    @api.users['alice']['is_admin'] = true
+    assert_nil push
+    @api.users['alice']['is_admin'] = false
+    @api.owners = [1]
+    assert_nil push
+  end
+
+  def test_unknown_user_is_denied_when_enabled
+    write('frontend/app.js'); sh(@work, 'commit', '-q', '-m', 'x')
+    assert_equal H::DENIED, push(user: 'mallory')
+  end
+
+  def test_project_without_policy_is_untouched
+    @api.policy = nil
+    write('backend/api.rb'); sh(@work, 'commit', '-q', '-m', 'x')
+    assert_nil push
+  end
+
+  def test_disabled_policy_is_untouched
+    @api.policy = JSON.generate(enabled: false, rules: [])
+    write('backend/api.rb'); sh(@work, 'commit', '-q', '-m', 'x')
+    assert_nil push
+  end
+
+  def test_api_failure_and_bad_policy_fail_closed
+    write('frontend/app.js'); sh(@work, 'commit', '-q', '-m', 'x')
+    @api.fail = true
+    assert_equal H::UNVERIFIABLE, push
+    @api.fail = false
+    @api.policy = '{not json'
+    assert_equal H::UNVERIFIABLE, push
+    @api.policy = policy([{ path: '/bad/', type: 'dir', principal_type: 'group', principal_id: 1, level: 'view', effect: 'allow' }])
+    assert_equal H::UNVERIFIABLE, push
+  end
+
+  def test_annotated_tag_carrying_a_forbidden_commit_is_rejected
+    write('backend/api.rb'); sh(@work, 'commit', '-q', '-m', 'x'); sh(@work, 'tag', '-a', 'v1', '-m', 'v1')
+    new = sh(@work, 'rev-parse', 'v1')
+    msg = H.check(env: { 'GL_REPOSITORY' => 'project-7', 'GL_USERNAME' => 'alice' },
+                  changes: [[ZERO, new, 'refs/tags/v1']], git: H::Git.new(@bare), api: @api)
+    assert_equal H::DENIED, msg
+  end
+
+  def test_merge_landing_a_foreign_change_on_the_default_branch_is_rejected
+    base = head
+    sh(@work, 'checkout', '-q', '-b', 'other'); write('backend/api.rb'); sh(@work, 'commit', '-q', '-m', 'bob work')
+    sh(@work, 'checkout', '-q', 'main'); write('frontend/app.js'); sh(@work, 'commit', '-q', '-m', 'alice work')
+    sh(@work, 'merge', '-q', '--no-ff', '-m', 'merge', 'other')
+    # the foreign commit already exists in the repo (pushed to its own branch earlier)
+    sh(@work, 'push', '-q', @bare, 'other')
+    msg = H.check(env: { 'GL_REPOSITORY' => 'project-7', 'GL_USERNAME' => 'alice' },
+                  changes: [[base, head, 'refs/heads/main']], git: H::Git.new(@bare), api: @api)
+    assert_equal H::DENIED, msg
+  end
+
+  def test_merging_main_into_a_feature_branch_is_not_blocked
+    sh(@work, 'checkout', '-q', '-b', 'feature'); write('frontend/app.js'); sh(@work, 'commit', '-q', '-m', 'f')
+    sh(@work, 'push', '-q', @bare, 'feature')
+    old = head
+    sh(@work, 'checkout', '-q', 'main'); write('backend/api.rb'); sh(@work, 'commit', '-q', '-m', 'someone else')
+    sh(@work, 'push', '-q', @bare, 'main')
+    sh(@work, 'checkout', '-q', 'feature'); sh(@work, 'merge', '-q', '--no-ff', '-m', 'sync', 'main')
+    msg = H.check(env: { 'GL_REPOSITORY' => 'project-7', 'GL_USERNAME' => 'alice' },
+                  changes: [[old, head, 'refs/heads/feature']], git: H::Git.new(@bare), api: @api)
+    assert_nil msg
+  end
+
+  def test_wikis_and_snippets_are_not_covered
+    write('backend/api.rb'); sh(@work, 'commit', '-q', '-m', 'x')
+    msg = H.check(env: { 'GL_REPOSITORY' => 'wiki-7', 'GL_USERNAME' => 'alice' },
+                  changes: [[ZERO, head, 'refs/heads/main']], git: H::Git.new(@bare), api: @api)
+    assert_nil msg
+  end
+
+  def test_filenames_with_odd_characters_are_handled
+    write("frontend/new\nline.txt"); write("backend/tab\tname.rb"); sh(@work, 'commit', '-q', '-m', 'x')
+    assert_equal H::DENIED, push
+  end
+end
