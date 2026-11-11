@@ -127,6 +127,31 @@ class HookTest < Minitest::Test
     assert_equal H::DENIED, push(user: 'mallory')
   end
 
+  def encrypted_policy
+    JSON.generate(enabled: true, rules: [], encrypted: ['secrets'])
+  end
+
+  def test_plaintext_under_an_encrypted_folder_is_rejected_even_for_an_admin
+    @api.policy = encrypted_policy
+    @api.users['root'] = { 'id' => 2, 'is_admin' => true }
+    write('secrets/key.txt', 'hunter2'); sh(@work, 'commit', '-q', '-m', 'x')
+    assert_equal H::PLAINTEXT, push(user: 'root')
+  end
+
+  def test_ciphertext_under_an_encrypted_folder_and_plaintext_elsewhere_pass
+    @api.policy = encrypted_policy
+    write('secrets/key.txt', "age-encryption.org/v1\n-> ssh-ed25519 x\n"); write('README.md', 'plain is fine here')
+    sh(@work, 'commit', '-q', '-m', 'x')
+    assert_nil push
+  end
+
+  def test_plaintext_hidden_in_an_intermediate_commit_is_rejected
+    @api.policy = encrypted_policy
+    write('secrets/key.txt', 'oops'); sh(@work, 'commit', '-q', '-m', 'a')
+    write('secrets/key.txt', "age-encryption.org/v1\n"); sh(@work, 'commit', '-q', '-m', 'b')
+    assert_equal H::PLAINTEXT, push
+  end
+
   def test_project_without_policy_is_untouched
     @api.policy = nil
     write('backend/api.rb'); sh(@work, 'commit', '-q', '-m', 'x')
