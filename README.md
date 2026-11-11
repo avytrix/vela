@@ -84,9 +84,22 @@ fetch it.
   viewer, search, diffs and the API. They are not a vault. Anyone who can clone the
   repository has every file.
 
-So use vela to keep people from changing the wrong things and to tidy what they
-see. Do not use it to keep secrets out of a repository people can clone. If you
-need that, split the secret into its own project.
+What a user who is only allowed to see part of a project still gets:
+
+| Route | Hidden by vela? |
+| ----- | --------------- |
+| File list, file viewer, raw, blame, search, diffs, API, GraphQL | Yes |
+| `git clone` and `git fetch` | **No**, every file and the full history |
+| Source download (ZIP, TAR), commit history, compare pages, project export | **No**, contents or file names can show |
+| Pushes, web edits, API commits and merges that change a protected path | Blocked |
+
+A person who clones a project with hidden folders will find those folders on disk. Editing them
+changes nothing for others: the push is rejected, and the message says so.
+
+So use vela to keep people from changing the wrong things and to tidy what they see. Do not use it
+to keep secrets out of a repository people can clone. For that, **put the secret in its own project**
+and link it with a submodule: GitLab's normal project permissions then decide who can fetch it. See
+[docs/split-secrets.md](./docs/split-secrets.md).
 
 ## Two tiers, so it works on any GitLab CE
 
