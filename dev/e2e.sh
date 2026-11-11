@@ -40,6 +40,12 @@ RT="glpat-$(openssl rand -hex 10)"
 docker exec -e T="$RT" $C gitlab-rails runner \
   "u=User.find_by_username('root'); t=u.personal_access_tokens.build(name: 'e2e-$RUN', scopes: [:api], expires_at: 7.days.from_now); t.set_token(ENV['T']); t.save!" >/dev/null 2>&1 \
   || { echo "could not create root token"; exit 2; }
+# the token must work before any fixture is built; if not, say what the server answered instead of failing later on empty JSON
+if ! curl -s -H "PRIVATE-TOKEN: $RT" "$BASE/api/v4/user" | grep -q '"username":"root"'; then
+  echo "root token does not work against $BASE; server answered:"
+  curl -s -i -H "PRIVATE-TOKEN: $RT" "$BASE/api/v4/user" | tr -d '\r' | cut -c1-200 | sed -n '1p;/^$/,+3p' | head -8
+  exit 2
+fi
 
 if [ "$MODE" = hook ]; then
   docker exec $C sh -c "mkdir -p /etc/vela /var/opt/gitlab/gitaly/custom_hooks/pre-receive.d && rm -f /var/opt/gitlab/gitaly/custom_hooks/pre-receive.d/vela && cp /opt/vela-path-permissions/server-hook/vela /var/opt/gitlab/gitaly/custom_hooks/pre-receive.d/vela && chown -R git:git /var/opt/gitlab/gitaly/custom_hooks && chmod 755 /var/opt/gitlab/gitaly/custom_hooks/pre-receive.d/vela && printf 'VELA_GITLAB_URL=%s\nVELA_TOKEN=%s\n' '$BASE' '$RT' > /etc/vela/hook.env && chmod 644 /etc/vela/hook.env" || { echo "could not install the hook"; exit 2; }
