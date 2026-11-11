@@ -38,7 +38,8 @@ suite() { # label -> runs the overlay suite and prints its summary, any failures
   C=$NAME BASE=http://localhost:$PORT VELA_MODE=overlay RESULTS=/tmp/suite.md dev/e2e.sh > /tmp/suite.log 2>&1
   echo "## Full overlay suite $1"; echo
   summary=$(grep -E 'passed|failed' /tmp/suite.log | tail -1)
-  if [ -n "$summary" ]; then echo "\`$summary\`"; else echo "The suite did not finish. Last lines of its log:"; echo; echo '```'; tail -8 /tmp/suite.log | cut -c1-200; echo '```'; fi
+  case "$summary" in *" 0 failed"*) ;; *) SUITE_FAILED=1 ;; esac # a suite that did not finish, or had failures, fails the job
+  if [ -n "$summary" ]; then echo "\`$summary\`"; else echo "The suite did not finish. First and last lines of its log:"; echo; echo '```'; head -12 /tmp/suite.log | cut -c1-200; echo '...'; tail -8 /tmp/suite.log | cut -c1-200; echo '```'; fi
   echo; grep -E '^FAIL' /tmp/suite.log | sed 's/^/    /'; echo
 }
 suite "after the upgrade"
@@ -48,3 +49,4 @@ step "After the downgrade attempt: version, initializer, loaded classes" state
 suite "after the downgrade attempt"
 } > $OUT
 echo "written $OUT"
+[ -z "${SUITE_FAILED:-}" ] || { echo "a suite did not pass; see $OUT"; exit 1; }
