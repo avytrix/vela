@@ -9,7 +9,7 @@
 
 Built and maintained by **[Avytrix Technologies](https://avytrix.dev/?utm_source=vela&utm_medium=docs&utm_campaign=readme)**. Need help shipping? [Hire the team behind it](#work-with-avytrix).
 
-> **Early days.** Write enforcement and read hiding pass 57 end-to-end tests on a real GitLab CE 19.0.2 ([results](./docs/e2e-results.md)), but that is the only version tested. Try it on staging first. See [Status](#status).
+> **Early days.** Write enforcement passes on real GitLab CE 15.11 to 19.5, and read hiding and the settings page on the same range ([results](./docs/compat/README.md)). Source installs, Helm and Gitaly Cluster are not tested yet. Try it on staging first. See [Status](#status).
 
 ## Sponsoring is what keeps this free
 
@@ -111,8 +111,13 @@ small Ruby modules, and it does not patch GitLab's source.
 lib/path_permissions/
   evaluator.rb     the rules engine, plain Ruby, knows nothing about GitLab
   write_check.rb   plugs into GitLab's push checks and rejects forbidden changes
+  read_check.rb    hides paths in file lists, content, search and diffs
+  guard.rb         works out who is asking, for each request
   store.rb         reads rules from the add-on's own tables
+  admin.rb, ui.rb, ui/  the settings page under Project Settings
   install.rb       boot guard, refuses to start if GitLab changed the hook it uses
+  hook.rb          Tier A: the server hook logic (git and the REST API only)
+server-hook/       Tier A: the script GitLab runs as a global pre-receive hook
 overlay/           the initializer you copy into GitLab
 db/schema.sql      the three tables the add-on uses
 ```
@@ -180,7 +185,7 @@ has no runtime dependencies. Report vulnerabilities privately through
 
 ## Work with Avytrix
 
-vela is one of the things we build at **[Avytrix Technologies](https://avytrix.dev/?utm_source=vela&utm_medium=docs&utm_campaign=readme-services)**.
+vela is one of the [products we build](https://avytrix.dev/our-work?utm_source=vela&utm_medium=docs&utm_campaign=readme-our-work) at **[Avytrix Technologies](https://avytrix.dev/?utm_source=vela&utm_medium=docs&utm_campaign=readme-services)**.
 We also build software for other teams, from a first prototype to something you
 run in production.
 
