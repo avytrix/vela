@@ -52,6 +52,8 @@ Confirm both succeeded before continuing. Do not proceed on a failed backup.
 
 ## Step 3: Install
 
+Choose the tier with the human. **Tier A** (server hook) enforces writes on any CE version and install method and survives upgrades: prefer it unless they also need paths **hidden** in GitLab, which needs **Tier B** (overlay, tested versions only). See [`portability.md`](./portability.md) and the Tier A section of [`install.md`](./install.md). For Tier A the rules go in a project CI/CD variable `VELA_PATH_POLICY`, not in SQL. After installing, run `bin/doctor --deep`.
+
 Follow [`install.md`](./install.md) steps 2 to 5 for the install method you found. Pin the vela commit and write it down.
 
 Then **verify it loaded**. This check is mandatory:

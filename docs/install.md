@@ -31,6 +31,80 @@ When GitLab boots it loads the initializer. The initializer checks that GitLab s
 
 Until you enable a project (step 6), vela changes nothing.
 
+## Pick your tier
+
+vela has two tiers. Read [portability.md](./portability.md) for why.
+
+| | Tier A: server hook | Tier B: overlay |
+| --- | --- | --- |
+| Blocks forbidden **writes** | Yes | Yes |
+| **Hides** paths (View and Read) in the UI, API, search | No | Yes |
+| Depends on GitLab internals | **No**, only documented behaviour | Yes, with a boot check |
+| Works on any CE version and install method | **Yes** | Tested versions only |
+
+Start with **Tier A** if you want the most portable setup, or if you only need to stop unwanted changes. Add **Tier B** to hide paths. The options below install Tier B (A, B and C are the install methods). Tier A has its own section next.
+
+## Tier A: the server hook (any GitLab CE)
+
+This uses GitLab's documented [global server hooks](https://docs.gitlab.com/administration/server_hooks/). Nothing inside GitLab is changed, so upgrades and downgrades cannot remove it.
+
+**1. Copy the files** on every server that runs Gitaly (one server on most installs):
+
+```bash
+sudo mkdir -p /opt/vela-path-permissions
+sudo cp -r lib server-hook /opt/vela-path-permissions/
+```
+
+**2. Turn on global server hooks and install the hook.** On a Linux package install, global hooks are **off until you set a directory**. Add this to `/etc/gitlab/gitlab.rb` (it is GitLab's own suggested value), then run `sudo gitlab-ctl reconfigure`:
+
+```ruby
+gitaly['configuration'] = { hooks: { custom_hooks_dir: '/var/opt/gitlab/gitaly/custom_hooks' } }
+```
+
+If your `gitlab.rb` already has a `gitaly['configuration']` block, add the `hooks:` entry to it instead of replacing it. Then create the hook, **owned by the git user and executable**:
+
+```bash
+D=/var/opt/gitlab/gitaly/custom_hooks
+sudo mkdir -p $D/pre-receive.d
+sudo cp /opt/vela-path-permissions/server-hook/vela $D/pre-receive.d/vela
+sudo chown -R git:git $D && sudo chmod 755 $D/pre-receive.d/vela
+```
+
+For source installs the directory is `custom_hooks_dir` in `gitaly/config.toml` under `[hooks]` (or `gitlab-shell/config.yml`), and for Helm see the [Gitaly chart](https://docs.gitlab.com/charts/charts/gitlab/gitaly/#global-server-hooks). GitLab's own page is [Git server hooks](https://docs.gitlab.com/administration/server_hooks/).
+
+**3. Give it a token.** Create a token for an admin user with the `read_api` scope (Admin Area, or Profile, Access tokens). The hook uses it to read each project's policy and to check group membership.
+
+```bash
+sudo mkdir -p /etc/vela
+sudo sh -c 'printf "VELA_GITLAB_URL=http://127.0.0.1:8080\nVELA_TOKEN=<your token>\n" > /etc/vela/hook.env'
+sudo chown root:git /etc/vela/hook.env && sudo chmod 640 /etc/vela/hook.env
+```
+
+`VELA_GITLAB_URL` is an address the Gitaly server can reach GitLab on (on a single-server Linux package install, `http://127.0.0.1:8080`, or your external URL). If this file is wrong or missing, **every push to an enabled project is rejected**. That is deliberate.
+
+**3b. (Docker or non-standard Ruby)** The hook script runs GitLab's own embedded Ruby, or `ruby` from `PATH`. It needs no gems.
+
+**4. Turn it on per project.** Add a project CI/CD variable named `VELA_PATH_POLICY` (Project, Settings, CI/CD, Variables). Only Maintainers and Owners can see or change it, and it is not part of the repository. Its value is JSON, using the same rules as the database tables:
+
+```json
+{
+  "enabled": true,
+  "rules": [
+    {"path": "frontend", "type": "dir", "principal_type": "group", "principal_id": 101, "level": "view",  "effect": "allow"},
+    {"path": "frontend", "type": "dir", "principal_type": "group", "principal_id": 101, "level": "read",  "effect": "allow"},
+    {"path": "frontend", "type": "dir", "principal_type": "group", "principal_id": 101, "level": "write", "effect": "allow"}
+  ]
+}
+```
+
+The rule semantics are the same as in step 7 of the install below. Set `"enabled": false` or delete the variable to switch a project off. A malformed policy rejects every push to that project, so keep a second Owner ready.
+
+Do not mark the variable "Masked" (it holds JSON, not a secret). Group membership counts inherited members, but not groups shared into another group.
+
+**5. Test it** the same way as step 8 below. A rejected push shows `GL-HOOK-ERR:` followed by the reason. Set `VELA_DEBUG=1` in the hook environment to see why a push was rejected as "could not be verified".
+
+Run `bin/doctor` any time, and after every upgrade, to see what is installed and working.
+
 ## Option A: Omnibus package (Debian, Ubuntu, RHEL and others)
 
 ### 1. Back up
@@ -136,7 +210,7 @@ Rules to remember:
 
 To undo a rule: `DELETE FROM path_permission_rules WHERE id = ...;`. To switch a project off: `UPDATE path_permission_settings SET enabled = false WHERE project_id = 42;`.
 
-A settings page inside GitLab for managing rules is planned. Until then, the database is the interface.
+**Prefer the settings page.** With the overlay installed, open the project, then **Settings, Path permissions**. It shows the rules as a table of path and group or user against View, Read and Write, with an add form, an on/off switch, a "Test as user" box that explains which rule decided, and a change history. Only admins, Owners and Maintainers see it. The SQL below does the same thing and is what you use for scripts and for the first test.
 
 ### 8. Test it
 
@@ -185,16 +259,29 @@ Set `app_role` to the database user in your `config/database.yml`.
 
 Not tested. The initializer must exist in the **webservice** and **sidekiq** images, and `lib/` must be readable at `/opt/vela-path-permissions/lib` in both. The usual route is a small custom image built `FROM` the GitLab CE images that adds those files. Create the tables against the chart's PostgreSQL with the same `schema.sql`. If you try this, please tell us how it went.
 
-## Upgrading GitLab
+## Upgrading and downgrading GitLab
 
-A GitLab upgrade can replace files under `/opt/gitlab/embedded/service/gitlab-rails`. After **every** upgrade:
+**Tier A (hook)** needs nothing: it lives outside GitLab's files. Run `bin/doctor` afterwards.
 
-```bash
-ls /opt/gitlab/embedded/service/gitlab-rails/config/initializers/zz_path_permissions.rb
-sudo gitlab-rails runner 'puts Gitlab::Checks::DiffCheck.ancestors.first(2).inspect'
+**Tier B (overlay)** is one file inside GitLab's directory, which a package upgrade may replace. Make it restore itself by adding this to `/etc/gitlab/gitlab.rb`. That file survives upgrades, and Chef evaluates it on **every** `gitlab-ctl reconfigure`, which every package upgrade runs:
+
+```ruby
+require 'fileutils'
+FileUtils.cp('/opt/vela-path-permissions/overlay/zz_path_permissions.rb',
+             '/opt/gitlab/embedded/service/gitlab-rails/config/initializers/zz_path_permissions.rb')
 ```
 
-If the file is gone, copy it back (step 3) and restart. A missing initializer means **no write checks at all**, so make this check part of your upgrade routine. Test the new GitLab version on staging first: only 19.0.x is tested.
+Then `sudo gitlab-ctl reconfigure`. (`dev/up.sh` uses exactly this for Docker, and it survives container recreation.) For installs without `gitlab.rb` (source), copy the file again after each upgrade.
+
+After **every** upgrade or downgrade:
+
+```bash
+sudo bin/doctor --deep
+```
+
+A missing initializer means **no write checks and no hiding from the overlay**. If GitLab refuses to start with `IncompatibleGitLab`, the new version changed something the overlay wraps: install Tier A (it still protects writes) and open an issue with the version. Test new GitLab versions on staging first, and check [compat/](./compat/) for which versions have passed.
+
+Downgrades: the add-on's tables are not touched by GitLab's migrations, so they are still there. GitLab itself only supports a downgrade through a database restore.
 
 ## Uninstall
 
@@ -235,8 +322,8 @@ If the file is gone, copy it back (step 3) and restart. A missing initializer me
 ## Known limits
 
 - `git clone` and `git fetch` are not restricted. Do not rely on vela to hide secrets.
-- Only pushes, web edits and API commits are checked for **write**. Pushes to refs that are not branches or tags are not covered.
-- View and Read hiding inside GitLab (file browser, search, API) is not built yet. Right now vela enforces **write** only.
+- Only pushes, web edits, API commits, merges and tags are checked for **write**. Pushes to refs that are not branches or tags are not covered.
+- View and Read hiding covers the file browser, file content, raw, blame, search, diffs, the API and GraphQL. It does **not** cover commit history and messages, archives, `repository/blobs/:sha`, project export, or the compare endpoint. See [read-design.md](./read-design.md).
 - Tested on GitLab CE 19.0.2. See [e2e-results.md](./e2e-results.md) for exactly what was run.
 
 Questions and bug reports: [open an issue](https://github.com/avytrix/vela/issues/new/choose). Security problems: see [SECURITY.md](../SECURITY.md).

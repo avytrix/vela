@@ -84,7 +84,7 @@ FakeCommit = Struct.new(:tree_id) do
   end
 end
 # net_paths: what GitLab returns for the old-tip vs new-tip tree diff ([] simulates a swallowed error).
-FakeRepo = Struct.new(:trees, :net_paths, :tag_new_commits) do
+FakeRepo = Struct.new(:trees, :net_paths, :tag_new_commits, :diff_items) do
   def raw_repository
     self
   end
@@ -99,6 +99,25 @@ FakeRepo = Struct.new(:trees, :net_paths, :tag_new_commits) do
 
   def find_changed_paths(_objects, **_opts)
     net_paths
+  end
+
+  FakeDiff = Struct.new(:new_path, :old_path, :renamed, :deleted, :added) do
+    def renamed_file?
+      renamed
+    end
+
+    def deleted_file?
+      deleted
+    end
+
+    def new_file?
+      added
+    end
+  end
+
+  # the plain-diff fallback used when find_changed_paths cannot diff two trees (older GitLab)
+  def diff(_from, _to, _options = {})
+    (diff_items || []).map { |p, old| FakeDiff.new(p, old || p, !old.nil?, false, false) }
   end
 end
 class ProtectedBranch

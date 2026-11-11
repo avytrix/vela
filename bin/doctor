@@ -1,0 +1,48 @@
+#!/bin/sh
+# Checks a vela install on this GitLab server (Linux package paths by default) and says what is missing.
+# Run it after every GitLab upgrade or downgrade. Read-only. Usage: sudo bin/doctor [--deep]
+# Override paths for other installs: RAILS_DIR, HOOKS_DIR, VELA_HOME.
+RAILS_DIR="${RAILS_DIR:-/opt/gitlab/embedded/service/gitlab-rails}"
+HOOKS_DIR="${HOOKS_DIR:-/var/opt/gitlab/gitaly/custom_hooks}"
+VELA_HOME="${VELA_HOME:-/opt/vela-path-permissions}"
+bad=0
+ok()   { printf 'ok       %s\n' "$1"; }
+miss() { printf 'MISSING  %s\n         fix: %s\n' "$1" "$2"; bad=1; }
+note() { printf 'note     %s\n' "$1"; }
+
+printf 'GitLab version: %s\n' "$(cat "$RAILS_DIR/VERSION" 2>/dev/null || echo unknown)"
+[ -d "$VELA_HOME/lib" ] && ok "vela files in $VELA_HOME/lib" || miss "vela files not found in $VELA_HOME/lib" "copy lib/ there (docs/install.md step 3)"
+
+echo "-- Tier A: server hook (write enforcement, any version)"
+if [ -x "$HOOKS_DIR/pre-receive.d/vela" ]; then
+  ok "hook installed: $HOOKS_DIR/pre-receive.d/vela"
+  if [ -r /etc/vela/hook.env ]; then
+    ok "/etc/vela/hook.env present"
+    . /etc/vela/hook.env 2>/dev/null
+    code=$(curl -s -o /dev/null -w '%{http_code}' -H "PRIVATE-TOKEN: ${VELA_TOKEN:-}" "${VELA_GITLAB_URL:-http://127.0.0.1}/api/v4/version")
+    [ "$code" = 200 ] && ok "hook can reach the GitLab API with its token" || miss "hook API check returned HTTP $code" "fix VELA_GITLAB_URL / VELA_TOKEN in /etc/vela/hook.env. Until then every push to an enabled project is rejected"
+  else
+    miss "/etc/vela/hook.env missing" "create it with VELA_GITLAB_URL and VELA_TOKEN (docs/install.md, Tier A)"
+  fi
+else
+  note "Tier A hook not installed (fine if you only use the overlay)"
+fi
+
+echo "-- Tier B: overlay (write + hide paths)"
+if command -v gitlab-psql >/dev/null 2>&1 && gitlab-psql -tA -c "select 1 from pg_tables where tablename='path_permission_settings'" 2>/dev/null | grep -q 1; then
+  gitlab-psql -tA -c "select has_table_privilege('gitlab','path_permission_settings','SELECT') and has_table_privilege('gitlab','path_permission_rules','SELECT')" 2>/dev/null | grep -q t \
+    && ok "database role can read the add-on tables" \
+    || miss "database role cannot read the add-on tables" "re-run db/schema.sql with -v app_role=<your Rails DB user>. Until then the overlay rejects pushes and hides repositories on EVERY project"
+fi
+if [ -f "$RAILS_DIR/config/initializers/zz_path_permissions.rb" ]; then
+  ok "initializer present"
+  if [ "$1" = "--deep" ]; then
+    gitlab-rails runner 'puts Gitlab::Checks::DiffCheck.ancestors.first(1).inspect' 2>/dev/null | grep -q WriteCheck \
+      && ok "overlay is loaded in GitLab" || miss "overlay is NOT loaded" "restart GitLab; if it fails to boot, see IncompatibleGitLab in the log"
+  else
+    note "run with --deep to confirm GitLab loaded it (takes about 30 seconds)"
+  fi
+else
+  note "overlay initializer not installed (fine if you only use Tier A). After an upgrade it may have been removed: re-copy overlay/zz_path_permissions.rb or add the gitlab.rb copy step (docs/install.md)"
+fi
+exit $bad

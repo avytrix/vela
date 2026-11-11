@@ -1,2 +1,3 @@
 dev/.root_password
 .DS_Store
+docs/compat/*.log
