@@ -52,11 +52,12 @@ module PathPermissions
 
       # Returns parsed JSON, or nil for 404. A brief outage (GitLab restarting a web worker, a 5xx, a timeout)
       # is retried; anything still wrong after that raises, so the push is rejected (fail closed).
-      def get(path)
+      # missing: extra status codes that mean "nothing there" (see load_rules)
+      def get(path, missing: [])
         attempt = 0
         begin
           attempt += 1
-          fetch(path)
+          fetch(path, missing)
         rescue Retry
           raise Deny, UNVERIFIABLE if attempt >= ATTEMPTS
 
@@ -69,13 +70,15 @@ module PathPermissions
 
       private
 
-      def fetch(path)
+      def fetch(path, missing)
         http = Net::HTTP.new(@base.host, @base.port)
         http.use_ssl = @base.scheme == 'https'
         http.open_timeout = 5
         http.read_timeout = 10
         res = http.request(Net::HTTP::Get.new("#{@base.path}/api/v4#{path}", 'PRIVATE-TOKEN' => @token))
         return nil if res.code == '404'
+        # a project with CI/CD turned off answers 403 for its variables; a bad or under-scoped token is not that
+        return nil if missing.include?(res.code) && !res.body.to_s.match?(/insufficient_scope|invalid_token|invalid_grant/)
         raise Retry if res.code.start_with?('5') || res.code == '429'
         raise Deny, UNVERIFIABLE unless res.code == '200' # 401/403: a wrong token will not fix itself
 
@@ -118,7 +121,8 @@ module PathPermissions
     end
 
     def load_rules(api, project_id)
-      var = api.get("/projects/#{project_id}/variables/#{VARIABLE}")
+      # CI/CD off => GitLab says 403, and such a project cannot carry the variable, so it has no policy
+      var = api.get("/projects/#{project_id}/variables/#{VARIABLE}", missing: ['403'])
       return nil unless var
 
       doc = JSON.parse(var['value'])
