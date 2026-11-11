@@ -15,7 +15,7 @@ module PathPermissions
   module Hook
     VARIABLE = 'VELA_PATH_POLICY'
     ZERO = '0' * 40
-    DENIED = 'You are not allowed to change a protected path in this push.'
+    DENIED = 'You are not allowed to change a protected path in this push. A clone contains every file even where GitLab hides it. Undo your change to that path (git restore) and ask a Maintainer if you need Write access.'
     UNVERIFIABLE = 'Path permissions could not be verified for this push; it was rejected.'
     MAX_COMMITS = 20_000
 
@@ -182,7 +182,7 @@ module PathPermissions
       return if needs.all? { |p, lvl| allowed?(ctx, p, lvl) }
 
       path = names.last
-      raise Deny, allowed?(ctx, path, :view) ? "You are not allowed to change '#{path}' (path permissions)." : DENIED
+      raise Deny, allowed?(ctx, path, :view) ? "You are not allowed to change '#{path}' (path permissions). Undo your change to it (git restore) and ask a Maintainer if you need Write access." : DENIED
     end
 
     def allowed?(ctx, path, level)
