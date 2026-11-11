@@ -9,7 +9,7 @@
 
 Built and maintained by **[Avytrix Technologies](https://avytrix.dev/?utm_source=vela&utm_medium=docs&utm_campaign=readme)**. Need help shipping? [Hire the team behind it](#work-with-avytrix).
 
-> **Early days.** Write enforcement passes 23 end-to-end tests on a real GitLab CE 19.0.2 ([results](./docs/e2e-results.md)), but that is the only version tested, and reading is not hidden yet. Try it on staging first. See [Status](#status).
+> **Early days.** Write enforcement and read hiding pass 57 end-to-end tests on a real GitLab CE 19.0.2 ([results](./docs/e2e-results.md)), but that is the only version tested. Try it on staging first. See [Status](#status).
 
 ## Sponsoring is what keeps this free
 
@@ -65,10 +65,12 @@ rules:
 | Part | State |
 | ---- | ----- |
 | Rule engine (who may do what to which path) | Built and tested |
-| Write enforcement on push, web edit, API commit, merge and tag (GitLab CE 19.0.x) | Built. 23 live end-to-end tests pass on CE 19.0.2 |
-| Hiding paths in the GitLab web UI, API and search | Planned |
-| Settings page under Project Settings | Planned |
-| Other GitLab CE versions, Docker, Helm, source installs | Planned |
+| Write enforcement on push, web edit, API commit, merge and tag (GitLab CE 19.0.x) | Built and tested live |
+| Hiding paths in GitLab: file lists, file content, raw, blame, search, diffs, API and GraphQL | Built and tested live (commit history and some export routes are not filtered, see below) |
+| Server hook tier (any CE, any install method) | Built. 23 live write cases pass on CE 19.0.2 and 19.5.3 with no overlay installed |
+| Upgrades | Overlay survived an in-place GitLab upgrade 19.0.2 to 19.0.11 (68 of 68). See [docs/compat/](./docs/compat/) |
+| Compatibility matrix on 15.11 to 19.5 | Hook tier 23 of 23 and overlay 68 of 68 on 16.11 to 19.5 (15.11: 69 of 69). See docs/compat/ |
+| Settings page under Project Settings (Tier B) | Built. Passes live on CE 19.0.2, 19.0.11 and 19.5.3. Rules can also be set with SQL (Tier B) or a CI/CD variable (Tier A) |
 
 ## The one limit you must know about
 
@@ -79,14 +81,28 @@ fetch it.
 - **Write rules are enforced.** A push that touches a path the person may not
   change is rejected before it lands.
 - **View and Read rules hide things inside GitLab**: file lists, the file
-  viewer, search and the API. They are not a vault. Anyone who can clone the
+  viewer, search, diffs and the API. They are not a vault. Anyone who can clone the
   repository has every file.
 
 So use vela to keep people from changing the wrong things and to tidy what they
 see. Do not use it to keep secrets out of a repository people can clone. If you
 need that, split the secret into its own project.
 
-## How it works
+## Two tiers, so it works on any GitLab CE
+
+GitLab documents only one extension point that can block something: **global
+pre-receive server hooks**. So vela comes in two tiers ([why](./docs/portability.md)):
+
+- **Tier A, server hook.** Enforces writes on any CE version and install method (Linux
+  package, Docker, source, Helm), and survives upgrades because it lives outside GitLab's
+  files. Rules sit in a project CI/CD variable that only Maintainers and Owners can open.
+- **Tier B, overlay.** Everything in Tier A, plus **hiding paths** in the web UI, API,
+  search and diffs. It relies on GitLab internals, so it refuses to boot if GitLab changed
+  something it needs, and each version is tested before it is listed as supported.
+
+`bin/doctor` checks what is installed after any upgrade or downgrade.
+
+## How it works (Tier B)
 
 vela is an overlay, not a fork of GitLab. It is one initializer file plus a few
 small Ruby modules, and it does not patch GitLab's source.
@@ -174,6 +190,10 @@ run in production.
 
 Have a project in mind? [Tell us about it at avytrix.dev](https://avytrix.dev/?utm_source=vela&utm_medium=docs&utm_campaign=readme-contact),
 or email **hello@avytrix.dev**.
+
+## Project status and handoff
+
+What is verified, what is untested and what to try next is in [docs/HANDOFF.md](./docs/HANDOFF.md). Per-version test results are in [docs/compat/](./docs/compat/README.md).
 
 ## Contributing
 

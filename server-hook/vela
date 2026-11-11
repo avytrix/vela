@@ -1,0 +1,13 @@
+#!/bin/sh
+# Global pre-receive server hook for vela. Install as <custom_hooks_dir>/pre-receive.d/vela
+# (see docs/install.md, "Tier A"). Needs Ruby (GitLab's own embedded Ruby is fine) and git.
+# Config, one KEY=VALUE per line, in /etc/vela/hook.env (readable only by the git user):
+#   VELA_GITLAB_URL=http://127.0.0.1:8080     VELA_TOKEN=<token with read_api, admin>
+set -u
+HOME_DIR="${VELA_HOME:-/opt/vela-path-permissions}"
+[ -r /etc/vela/hook.env ] && { set -a; . /etc/vela/hook.env; set +a; }
+for r in /opt/gitlab/embedded/bin/ruby "$(command -v ruby 2>/dev/null)"; do
+  [ -n "$r" ] && [ -x "$r" ] && exec "$r" "$HOME_DIR/server-hook/pre_receive.rb"
+done
+echo "GL-HOOK-ERR: vela could not find Ruby, push rejected" >&2
+exit 1

@@ -1,0 +1,77 @@
+name: Compatibility
+
+# Runs the live end-to-end suite against real GitLab CE images, for both tiers, in parallel. Slow (about
+# 20 to 30 minutes a job). The full matrix runs weekly and on demand. A pull request that changes the add-on
+# runs only the small subset below (the version that has been hardest to support), plus the package upgrade
+# test. Edit PR_SUBSET to widen it. A version is listed as supported only when its results here are green.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 1"
+  pull_request:
+    branches: [main]
+    paths:
+      - "lib/**"
+      - "server-hook/**"
+      - "overlay/**"
+      - "db/**"
+      - "dev/**"
+      - ".github/workflows/compat.yml"
+
+concurrency:
+  group: compat-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Choose versions
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        run: |
+          PR_SUBSET='{"include":[{"tag":"15.11.0-ce.0","tier":"overlay"}]}'
+          FULL='{"tag":["19.5.3-ce.0","19.0.11-ce.0","19.0.2-ce.0","18.11.0-ce.0","17.11.0-ce.0","16.11.0-ce.0","15.11.0-ce.0"],"tier":["hook","overlay"]}'
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then echo "matrix=$PR_SUBSET" >> "$GITHUB_OUTPUT"; else echo "matrix=$FULL" >> "$GITHUB_OUTPUT"; fi
+
+  e2e:
+    name: GitLab ${{ matrix.tag }} (${{ matrix.tier }})
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Run the suite
+        env:
+          PUMA_WORKERS: "2"
+        run: dev/compat.sh "${{ matrix.tag }}" "${{ matrix.tier }}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: compat-${{ matrix.tag }}-${{ matrix.tier }}
+          path: docs/compat/*.md
+          if-no-files-found: ignore
+
+  package-upgrade:
+    name: Package upgrade and downgrade
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Run the upgrade test
+        env:
+          PUMA_WORKERS: "2"
+        run: dev/upgrade-test.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: compat-package-upgrade
+          path: docs/compat/*.md
+          if-no-files-found: ignore

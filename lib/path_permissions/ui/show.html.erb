@@ -1,0 +1,100 @@
+<% page = "/#{@project.full_path}#{PathPermissions::UI::PATH}" %>
+<style>
+  .vela-grid td, .vela-grid th { padding: 6px 10px; }
+  .vela-yes { color: #108548; font-weight: 600; } .vela-no { color: #dd2b0e; font-weight: 600; } .vela-dash { color: #89888d; }
+  .vela-note { border-left: 4px solid #e9be74; background: #fdf1dd; padding: 10px 14px; margin-bottom: 16px; }
+</style>
+<div class="gl-mb-5">
+  <h1 class="gl-heading-1">Path permissions</h1>
+  <p>Decide which users and groups can <b>view</b>, <b>read</b> or <b>write</b> each folder or file. Only maintainers, owners and admins can change this page. Admins and owners are never restricted.</p>
+  <div class="vela-note">
+    <b>Limit:</b> writes are blocked for real. View and Read only hide paths inside GitLab's pages and API. Anyone who can <code>git clone</code> or <code>git fetch</code> still gets every file, so do not use this to keep secrets out of a repository people can clone.
+  </div>
+  <% if flash[:notice] %><div class="gl-alert gl-alert-success"><%= flash[:notice] %></div><% end %>
+  <% if flash[:alert] %><div class="gl-alert gl-alert-danger"><%= flash[:alert] %></div><% end %>
+</div>
+
+<div class="gl-mb-5">
+  <form method="post" action="<%= page %>/toggle">
+    <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>">
+    <input type="hidden" name="enabled" value="<%= @enabled ? '0' : '1' %>">
+    <b>Status:</b> <%= @enabled ? 'On' : 'Off' %>.
+    <% if @enabled %>Rules below are being enforced.<% else %>Nothing is restricted until you turn it on.<% end %>
+    <button type="submit" class="btn btn-default btn-md gl-button"><%= @enabled ? 'Turn off' : 'Turn on' %></button>
+  </form>
+</div>
+
+<h2 class="gl-heading-2">Rules</h2>
+<p class="gl-text-subtle">A folder rule covers everything inside it. A path with any <i>allow</i> rule becomes a list: only people you name can use it. A path with no rule keeps normal GitLab access. Deny beats allow, and a more specific path beats its folder. Write needs Read, and Read needs View.</p>
+<table class="table vela-grid">
+  <thead><tr><th>Path</th><th>Who</th><th>View</th><th>Read</th><th>Write</th><th></th></tr></thead>
+  <tbody>
+  <% if @pairs.empty? %>
+    <tr><td colspan="6" class="gl-text-subtle">No rules yet. Add one below.</td></tr>
+  <% end %>
+  <% @pairs.each do |(path, type, ptype, pid), rows| %>
+    <% by_level = rows.map { |r| [r[:rule].level, r[:rule].effect] }.to_h %>
+    <tr>
+      <td><code><%= path %><%= '/' if type == :dir %></code></td>
+      <td><%= @names.call(ptype, pid) %></td>
+      <% %i[view read write].each do |l| %>
+        <td><% case by_level[l] when :allow %><span class="vela-yes">allow</span><% when :deny %><span class="vela-no">deny</span><% else %><span class="vela-dash">not granted</span><% end %></td>
+      <% end %>
+      <td>
+        <form method="post" action="<%= page %>/remove" onsubmit="return confirm('Remove this rule?');">
+          <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>">
+          <input type="hidden" name="path" value="<%= path %>"><input type="hidden" name="path_type" value="<%= type %>">
+          <input type="hidden" name="principal_type" value="<%= ptype %>"><input type="hidden" name="principal_id" value="<%= pid %>">
+          <button type="submit" class="btn btn-danger btn-sm gl-button">Remove</button>
+        </form>
+      </td>
+    </tr>
+  <% end %>
+  </tbody>
+</table>
+
+<h3 class="gl-heading-3">Add a rule</h3>
+<form method="post" action="<%= page %>/add" class="gl-mb-5">
+  <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>">
+  <p>
+    <label>Path <input name="path" class="form-control" style="display:inline-block;width:260px" placeholder="frontend or docs/readme.md" required></label>
+    <label>is a <select name="path_type"><option value="dir">folder</option><option value="file">file</option></select></label>
+  </p>
+  <p>
+    <label>For
+      <select name="principal_type"><option value="group">group (full path)</option><option value="user">user (username)</option></select>
+    </label>
+    <input name="principal" class="form-control" style="display:inline-block;width:260px" placeholder="my-group/frontend-team or alice" required>
+  </p>
+  <p>
+    <select name="effect"><option value="allow">Allow</option><option value="deny">Deny</option></select>
+    <label><input type="checkbox" name="levels[]" value="view" checked> View</label>
+    <label><input type="checkbox" name="levels[]" value="read" checked> Read</label>
+    <label><input type="checkbox" name="levels[]" value="write" checked> Write</label>
+  </p>
+  <button type="submit" class="btn btn-confirm btn-md gl-button">Add rule</button>
+</form>
+
+<h2 class="gl-heading-2">Test as user</h2>
+<form method="get" action="<%= page %>" class="gl-mb-3">
+  <input name="explain_user" class="form-control" style="display:inline-block;width:200px" placeholder="username" value="<%= params[:explain_user] %>">
+  <input name="explain_path" class="form-control" style="display:inline-block;width:300px" placeholder="path, e.g. backend/api.rb" value="<%= params[:explain_path] %>">
+  <button type="submit" class="btn btn-default btn-md gl-button">Check</button>
+</form>
+<% if @explain %>
+  <% if @explain[:error] %><div class="gl-alert gl-alert-warning"><%= @explain[:error] %></div>
+  <% elsif @explain[:exempt] %><p>@<%= @explain[:user].username %> is an admin or owner here, so no rule applies to them.</p>
+  <% else %>
+    <table class="table vela-grid"><thead><tr><th>Level</th><th>Result</th><th>Why</th></tr></thead><tbody>
+    <% @explain[:levels].each do |level, v| %>
+      <tr><td><%= level %></td><td><span class="<%= v[:allowed] ? 'vela-yes' : 'vela-no' %>"><%= v[:allowed] ? 'allowed' : 'blocked' %></span></td><td><%= v[:why] %></td></tr>
+    <% end %></tbody></table>
+    <p class="gl-text-subtle">This shows what the rules say. GitLab's own project role still applies on top.</p>
+  <% end %>
+<% end %>
+
+<h2 class="gl-heading-2">History</h2>
+<table class="table vela-grid"><thead><tr><th>When</th><th>User ID</th><th>Change</th></tr></thead><tbody>
+<% @audits.each do |at, actor, action, detail| %><tr><td><%= at %></td><td><%= actor %></td><td><%= action %> <code><%= detail.to_s[0, 160] %></code></td></tr><% end %>
+<% if @audits.empty? %><tr><td colspan="3" class="gl-text-subtle">No changes yet.</td></tr><% end %>
+</tbody></table>

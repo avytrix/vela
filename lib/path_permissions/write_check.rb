@@ -22,8 +22,17 @@ module PathPermissions
       return if state == :off
 
       raise ::Gitlab::GitAccess::ForbiddenError, UNVERIFIABLE if state == :error
+      return if path_permissions_actor_exempt? # admins and Owners are never blocked by the extra checks
+
       path_permissions_check_tag_commits!(state)
       path_permissions_check_applied_changes!(state)
+    end
+
+    def path_permissions_actor_exempt?
+      user = user_access.user
+      !user.nil? && path_permission_exempt?(user)
+    rescue StandardError
+      false
     end
 
     def path_permissions_log(message)
@@ -60,7 +69,7 @@ module PathPermissions
       raise ::Gitlab::GitAccess::ForbiddenError, UNVERIFIABLE if left.nil? || right.nil?
       return if left == right
 
-      paths = repo.find_changed_paths([::Gitlab::Git::DiffTree.new(left, right)])
+      paths = path_permissions_net_paths(repo, left, right)
       # The trees differ, so an empty answer means the listing failed (GitLab swallows Gitaly errors here).
       raise ::Gitlab::GitAccess::ForbiddenError, UNVERIFIABLE if paths.empty?
 
@@ -68,6 +77,28 @@ module PathPermissions
         error = path_permission_error(rules, path)
         raise ::Gitlab::GitAccess::ForbiddenError, error if error
       end
+    end
+
+    Change = Struct.new(:status, :path, :old_path)
+
+    # Changed paths between the old and new branch tip. Newer GitLab can diff two trees through
+    # find_changed_paths; older versions answer with nothing, so fall back to the plain diff (limits off so
+    # a big change is never truncated, and truncation would be treated as unverifiable anyway).
+    def path_permissions_net_paths(repo, left_tree, right_tree)
+      paths = defined?(::Gitlab::Git::DiffTree) ? repo.find_changed_paths([::Gitlab::Git::DiffTree.new(left_tree, right_tree)]) : []
+      return paths unless paths.empty?
+
+      raw = repo.raw_repository
+      return [] unless raw.respond_to?(:diff)
+
+      diffs = raw.diff(oldrev, newrev, limits: false)
+      list = diffs.map do |d|
+        status = d.renamed_file? ? :RENAMED : (d.deleted_file? ? :DELETED : (d.new_file? ? :ADDED : :MODIFIED))
+        Change.new(status, d.new_path, d.old_path)
+      end
+      diffs.respond_to?(:overflow?) && diffs.overflow? ? [] : list
+    rescue StandardError
+      []
     end
 
     def path_permissions_landing_branch?
