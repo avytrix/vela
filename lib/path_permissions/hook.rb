@@ -97,8 +97,10 @@ module PathPermissions
       project_id = env['GL_REPOSITORY'].to_s[/\Aproject-(\d+)\z/, 1]
       return nil unless project_id # wikis, snippets, design repositories are not covered
 
-      rules = load_rules(api, project_id)
+      rules, encrypted = load_policy(api, project_id)
       return nil unless rules
+
+      verify_encrypted!(git, changes, encrypted) unless encrypted.empty?
 
       user = api.get("/users?username=#{URI.encode_www_form_component(env['GL_USERNAME'].to_s)}")&.first
       raise Deny, DENIED unless user && !env['GL_USERNAME'].to_s.empty?
@@ -120,7 +122,7 @@ module PathPermissions
       e.message
     end
 
-    def load_rules(api, project_id)
+    def load_policy(api, project_id)
       # CI/CD off => GitLab says 403, and such a project cannot carry the variable, so it has no policy
       var = api.get("/projects/#{project_id}/variables/#{VARIABLE}", missing: ['403'])
       return nil unless var
@@ -128,11 +130,14 @@ module PathPermissions
       doc = JSON.parse(var['value'])
       return nil unless doc['enabled']
 
+      encrypted = Array(doc['encrypted']).map(&:to_s)
+      raise Deny, UNVERIFIABLE unless encrypted.all? { |d| PathPermissions.valid_path?(d) }
+
       rules = doc.fetch('rules').map do |r|
         Rule.new(path: r['path'], type: r['type'].to_sym, principal_type: r['principal_type'].to_sym,
                  principal_id: Integer(r['principal_id']), level: r['level'].to_sym, effect: r['effect'].to_sym)
       end
-      PathPermissions.validate!(rules)
+      [PathPermissions.validate!(rules), encrypted]
     rescue JSON::ParserError, KeyError, TypeError, NoMethodError, ArgumentError, InvalidRule => e
       warn "vela: bad policy: #{e.class}: #{e.message}" if ENV['VELA_DEBUG']
       raise Deny, UNVERIFIABLE
@@ -145,6 +150,29 @@ module PathPermissions
 
     # Every path every NEW commit touches (so a forbidden change that a later commit reverts is still
     # caught). Merge commits use the combined diff, which lists only paths that differ from all parents.
+    AGE_MAGIC = 'age-encryption.org/v1'
+    PLAINTEXT = 'Files under an encrypted path must be encrypted with vela-crypt before they are committed ' \
+                '(run `vela-crypt init`, then commit again). Nothing was pushed.'
+
+    # Everyone, admins included, must push ciphertext under the policy's "encrypted" folders: plaintext in
+    # history can never be taken back. The message names no file.
+    def verify_encrypted!(git, changes, encrypted)
+      changes.each do |_old, new, ref|
+        next if new == ZERO || !(ref.start_with?('refs/heads/') || ref.start_with?('refs/tags/'))
+
+        git.run('rev-list', '--reverse', new, '--not', '--all').split.each do |sha|
+          raw = git.run('diff-tree', '-r', '-z', '--root', '-m', '--no-commit-id', '--diff-filter=AMCR', '--raw', sha).split("\0")
+          raw.each_slice(2) do |meta, path|
+            next unless path && encrypted.any? { |d| path == d || path.start_with?("#{d}/") }
+
+            mode, oid = meta.split[1], meta.split[3]
+            next if mode == '160000' # submodule
+            raise Deny, PLAINTEXT unless git.run('cat-file', 'blob', oid).start_with?(AGE_MAGIC)
+          end
+        end
+      end
+    end
+
     def commit_paths(git, new)
       commits = git.run('rev-list', '--reverse', '--parents', new, '--not', '--all').lines.map { |l| l.split }
       raise Deny, UNVERIFIABLE if commits.size > MAX_COMMITS

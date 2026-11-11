@@ -100,6 +100,8 @@ pre-receive server hooks**. So vela comes in two tiers ([why](./docs/portability
   search and diffs. It relies on GitLab internals, so it refuses to boot if GitLab changed
   something it needs, and each version is tested before it is listed as supported.
 
+- **Tier C, encrypted paths (optional).** Hides file **content** even from people who clone, by encrypting it to their SSH keys. GitLab's web pages cannot show those files, and names stay visible. See [docs/encryption.md](./docs/encryption.md).
+
 `bin/doctor` checks what is installed after any upgrade or downgrade.
 
 ## How it works (Tier B)
