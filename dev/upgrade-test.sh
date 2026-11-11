@@ -37,7 +37,12 @@ step "After the upgrade: version, initializer, loaded classes" state
 # A CI runner has about 7 GB. GitLab plus its monitoring services plus a second Rails process (gitlab-rails runner)
 # can starve the web workers, so stop the monitoring services before each suite; they are not part of the test.
 lean() { docker exec $NAME sh -c 'for s in prometheus redis-exporter postgres-exporter gitlab-exporter node-exporter alertmanager; do gitlab-ctl stop $s >/dev/null 2>&1; done; true'; }
-health() { echo '```'; docker exec $NAME sh -c 'free -m; echo; gitlab-ctl status 2>&1 | cut -c1-80 | head -20' 2>&1; echo '```'; }
+health() { echo '```'; docker exec $NAME sh -c 'free -m; echo; gitlab-ctl status 2>&1 | cut -c1-80 | head -20' 2>&1
+  echo; for u in /api/v4/version /api/v4/projects /users/sign_in; do
+    curl -s -m 60 -o /dev/null -w "GET $u: HTTP %{http_code} in %{time_total}s\n" http://localhost:$PORT$u; done
+  echo; echo '--- last errors in the Rails log'
+  docker exec $NAME sh -c 'tail -n 400 /var/log/gitlab/gitlab-rails/production_json.log 2>/dev/null | grep -E "\"severity\":\"(ERROR|FATAL)\"|exception|\"status\":(500|502|503)" | tail -n 6 | cut -c1-400; echo "--- puma stderr"; tail -n 8 /var/log/gitlab/puma/puma_stderr.log 2>/dev/null | cut -c1-300; echo "--- workhorse"; tail -n 6 /var/log/gitlab/gitlab-workhorse/current 2>/dev/null | cut -c1-300' 2>&1
+  echo '```'; }
 suite() { # label -> runs the overlay suite and prints its summary, any failures, and the log tail if it never finished
   lean
   C=$NAME BASE=http://localhost:$PORT VELA_MODE=overlay RESULTS=/tmp/suite.md dev/e2e.sh > /tmp/suite.log 2>&1

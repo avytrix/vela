@@ -114,7 +114,11 @@ fi
 
 # ---------- git helpers ----------
 clone() { # user token dir project -> clone with identity set
-  git clone -q "http://$1:$2@${BASE#http://}/root/$4.git" "$3" 2>/dev/null || return 1
+  local i err
+  for i in 1 2 3; do # a web worker can be briefly busy; keep the last error so a real failure is visible
+    err=$(git clone -q "http://$1:$2@${BASE#http://}/root/$4.git" "$3" 2>&1) && break
+    rm -rf "$3"; [ $i = 3 ] && { echo "clone of $4 failed: $err" >&2; return 1; }; sleep 5
+  done
   g "$3" config user.name "$1"; g "$3" config user.email "$1@example.com"
 }
 PNAME=$(api $RT $BASE/api/v4/projects/$PID | json 'd["path"]')
