@@ -41,9 +41,13 @@ docker exec -e T="$RT" $C gitlab-rails runner \
   "u=User.find_by_username('root'); t=u.personal_access_tokens.build(name: 'e2e-$RUN', scopes: [:api], expires_at: 7.days.from_now); t.set_token(ENV['T']); t.save!" >/dev/null 2>&1 \
   || { echo "could not create root token"; exit 2; }
 # the token must work before any fixture is built; if not, say what the server answered instead of failing later on empty JSON
-if ! curl -s -H "PRIVATE-TOKEN: $RT" "$BASE/api/v4/user" | grep -q '"username":"root"'; then
-  echo "root token does not work against $BASE; server answered:"
-  curl -s -i -H "PRIVATE-TOKEN: $RT" "$BASE/api/v4/user" | tr -d '\r' | cut -c1-200 | sed -n '1p;/^$/,+3p' | head -8
+# a web worker may still be recovering (for example right after a package upgrade): retry for two minutes
+tok_ok() { curl -s -m 15 -H "PRIVATE-TOKEN: $RT" "$BASE/api/v4/user" | grep -q '"username":"root"'; }
+for i in $(seq 1 12); do tok_ok && break; sleep 10; done
+if ! tok_ok; then
+  echo "root token does not work against $BASE after 2 minutes; server answered:"
+  ans=$(curl -s -m 15 -i -H "PRIVATE-TOKEN: $RT" "$BASE/api/v4/user" | tr -d '\r' | cut -c1-200 | head -8)
+  echo "${ans:-nothing (the connection was closed without an answer)}"
   exit 2
 fi
 
@@ -110,7 +114,11 @@ fi
 
 # ---------- git helpers ----------
 clone() { # user token dir project -> clone with identity set
-  git clone -q "http://$1:$2@${BASE#http://}/root/$4.git" "$3" 2>/dev/null || return 1
+  local i err
+  for i in 1 2 3; do # a web worker can be briefly busy; keep the last error so a real failure is visible
+    err=$(git clone -q "http://$1:$2@${BASE#http://}/root/$4.git" "$3" 2>&1) && break
+    rm -rf "$3"; [ $i = 3 ] && { echo "clone of $4 failed: $err" >&2; return 1; }; sleep 5
+  done
   g "$3" config user.name "$1"; g "$3" config user.email "$1@example.com"
 }
 PNAME=$(api $RT $BASE/api/v4/projects/$PID | json 'd["path"]')
