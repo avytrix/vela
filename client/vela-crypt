@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# vela-crypt: keep file CONTENT secret inside a repository that everyone can clone.
+# Files under protected folders are encrypted with age to the SSH public keys GitLab already holds
+# (https://GITLAB/USERNAME.keys). A user without a matching private key gets ciphertext, and `sync`
+# leaves those files out of their working tree. Needs: age, git, curl, bash.
+set -euo pipefail
+
+MAGIC='age-encryption.org/v1'
+RECIP=.vela/recipients
+
+identities() { # -i flags for every SSH private key the user has (or $VELA_IDENTITY)
+  local k
+  for k in ${VELA_IDENTITY:-$HOME/.ssh/id_ed25519 $HOME/.ssh/id_rsa}; do [ -f "$k" ] && printf -- '-i\n%s\n' "$k"; done
+}
+is_cipher() { [ "$(head -c ${#MAGIC} "$1")" = "$MAGIC" ]; }
+decrypt() { # file -> plaintext on stdout, fails when no key fits
+  local ids=(); while IFS= read -r l; do ids+=("$l"); done < <(identities)
+  [ ${#ids[@]} -gt 0 ] || return 1
+  age -d "${ids[@]}" "$1" 2>/dev/null
+}
+
+cmd=${1:-help}; shift || true
+case $cmd in
+  init) # once per clone: wire up the filter. Locked files must never break git, so required=false.
+    git config filter.vela.clean 'vela-crypt clean %f'
+    git config filter.vela.smudge 'vela-crypt smudge %f'
+    git config filter.vela.required false
+    git config diff.vela.textconv 'vela-crypt textconv'   # local `git diff` and `git log -p` show plaintext
+    echo "vela-crypt is set up in this clone. Run 'vela-crypt sync' after each pull." ;;
+
+  protect) # protect <folder>: encrypt everything under it from now on (commit .gitattributes afterwards)
+    [ -n "${1:-}" ] || { echo "usage: vela-crypt protect <folder>"; exit 2; }
+    echo "${1%/}/** filter=vela diff=vela" >> .gitattributes
+    echo "Protected ${1%/}/. Add the folder to the policy's \"encrypted\" list so the server enforces it." ;;
+
+  recipients) # recipients <gitlab-url> <username>...: replace the list with those users' SSH public keys
+    url=${1:?usage: vela-crypt recipients <gitlab-url> <username>...}; shift
+    mkdir -p .vela; : > $RECIP
+    for u in "$@"; do
+      keys=$(curl -fsS "${url%/}/$u.keys") || { echo "could not fetch keys for $u" >&2; exit 1; }
+      [ -n "$keys" ] || { echo "$u has no SSH key on GitLab" >&2; exit 1; }
+      printf '%s\n' "$keys" >> $RECIP
+    done
+    echo "$(wc -l < $RECIP | tr -d ' ') keys written to $RECIP. Re-encrypt: touch the protected files and commit." ;;
+
+  clean) # git clean filter: stdin plaintext -> ciphertext. Already-encrypted input passes through.
+    path=${1:?}; tmp=$(mktemp); trap 'rm -f "$tmp" "$tmp.old"' EXIT; cat > "$tmp"
+    if is_cipher "$tmp"; then cat "$tmp"; exit 0; fi
+    [ -s $RECIP ] || { echo "vela-crypt: $RECIP is missing or empty" >&2; exit 1; }
+    # age output is random: reuse the stored ciphertext when the content did not change, so git status stays clean
+    if git cat-file blob ":$path" > "$tmp.old" 2>/dev/null && is_cipher "$tmp.old" && decrypt "$tmp.old" | cmp -s - "$tmp"; then
+      cat "$tmp.old"; exit 0
+    fi
+    age -R $RECIP < "$tmp" ;;
+
+  smudge) # git smudge filter: stdin ciphertext -> plaintext if our key fits, else the ciphertext (locked)
+    tmp=$(mktemp); trap 'rm -f "$tmp"' EXIT; cat > "$tmp"
+    if is_cipher "$tmp" && decrypt "$tmp"; then exit 0; fi
+    cat "$tmp" ;;
+
+  textconv) # git diff helper: ciphertext file -> plaintext when our key fits
+    if is_cipher "$1" && decrypt "$1"; then exit 0; fi
+    cat "$1" ;;
+
+  sync) # leave out of the working tree every protected file this user cannot decrypt
+    skip=()
+    while IFS= read -r -d '' f; do
+      [ "$(git check-attr filter -- "$f" | awk '{print $3}')" = vela ] || continue
+      blob=$(mktemp); git cat-file blob "HEAD:$f" > "$blob" 2>/dev/null || { rm -f "$blob"; continue; }
+      if is_cipher "$blob" && ! decrypt "$blob" >/dev/null; then skip+=("$f"); fi
+      rm -f "$blob"
+    done < <(git ls-files -z)
+    if [ ${#skip[@]} -eq 0 ]; then git sparse-checkout disable 2>/dev/null || true; echo "Every protected file is readable by you."; exit 0; fi
+    { echo '/*'; for f in "${skip[@]}"; do echo "!/$f"; done; } | git sparse-checkout set --no-cone --stdin
+    echo "${#skip[@]} protected file(s) are locked for you and were left out of your working tree." ;;
+
+  *) echo "vela-crypt init | protect <folder> | recipients <gitlab-url> <user>... | sync"; [ "$cmd" = help ] || exit 2 ;;
+esac
