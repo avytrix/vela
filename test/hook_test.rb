@@ -21,7 +21,7 @@ class HookTest < Minitest::Test
       @members = { 101 => [1] }
     end
 
-    def get(path)
+    def get(path, missing: [])
       raise H::Deny, H::UNVERIFIABLE if fail
 
       case path
@@ -208,7 +208,8 @@ class ApiRetryTest < Minitest::Test
         client = server.accept
         while (line = client.gets) && line != "\r\n"; end # drain the request headers
         hits << code
-        body = code == 200 ? '{"ok":true}' : 'x'
+        body = code == 200 ? '{"ok":true}' : (code == 'scope' ? '{"error":"insufficient_scope"}' : 'x')
+        code = 403 if code == 'scope'
         client.write "HTTP/1.1 #{code} X\r\nContent-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n#{body}"
         client.close
       end
@@ -244,6 +245,26 @@ class ApiRetryTest < Minitest::Test
     assert_raises(H::Deny) { client.get('/x') }
     assert_equal [401], hits
     thread.join(5)
+  end
+
+  def test_403_on_a_lookup_that_may_be_missing_means_nothing_there
+    server, hits, thread = serve([403])
+    client, = api(server)
+    assert_nil client.get('/x', missing: ['403'])
+    assert_equal [403], hits
+    thread.join(5)
+  end
+
+  def test_403_elsewhere_still_fails_closed
+    server, = serve([403])
+    client, = api(server)
+    assert_raises(H::Deny) { client.get('/x') }
+  end
+
+  def test_403_for_a_token_without_scope_still_fails_closed
+    server, = serve(['scope'])
+    client, = api(server)
+    assert_raises(H::Deny) { client.get('/x', missing: ['403']) }
   end
 
   def test_connection_refused_is_retried_then_fails_closed
