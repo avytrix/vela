@@ -280,6 +280,13 @@ api $RT -X POST $BASE/api/v4/groups/$FEG/members -d "user_id=$AID&access_level=3
 O=$W/open; clone $AU $AT $O $ONAME; fresh $O o1; edit $O backend/anything.rb; commit $O; out=$(push $O HEAD:refs/heads/o1)
 record "project without path permissions keeps native behaviour" allowed $(verdict $?)
 
+# A project with CI/CD turned off: GitLab answers 403 (not 404) for the policy variable. This once rejected every push.
+NOCI=$(mkproject e2e-noci); api $RT -X PUT $BASE/api/v4/projects/$NOCI -d "builds_access_level=disabled" >/dev/null
+NNAME=$(api $RT $BASE/api/v4/projects/$NOCI | json 'd["path"]')
+record "CI/CD really is off on that project (variables API says 403)" 403 $(code $RT "$BASE/api/v4/projects/$NOCI/variables/VELA_PATH_POLICY")
+N=$W/noci; clone $AU $AT $N $NNAME; fresh $N n1; edit $N backend/anything.rb; commit $N; out=$(push $N HEAD:refs/heads/n1)
+record "project with CI/CD turned off keeps native behaviour (push accepted)" allowed $(verdict $?)
+
 break_rules
 [ "$MODE" = overlay ] && RC=$(code $AT "$P4/repository/files/frontend%2Fapp.js?ref=main")
 fresh $D t15; edit $D frontend/app.js; commit $D; out=$(push $D HEAD:refs/heads/t15); rc=$?
