@@ -34,12 +34,18 @@ docker exec $NAME sh -c 'apt-get update -qq >/dev/null 2>&1; apt-get install -y 
 step "apt-get install gitlab-ce=$TO (the package upgrade; runs the package's own reconfigure)" docker exec $NAME sh -c "DEBIAN_FRONTEND=noninteractive apt-get install -y gitlab-ce=$TO"
 ready
 step "After the upgrade: version, initializer, loaded classes" state
+# A CI runner has about 7 GB. GitLab plus its monitoring services plus a second Rails process (gitlab-rails runner)
+# can starve the web workers, so stop the monitoring services before each suite; they are not part of the test.
+lean() { docker exec $NAME sh -c 'for s in prometheus redis-exporter postgres-exporter gitlab-exporter node-exporter alertmanager; do gitlab-ctl stop $s >/dev/null 2>&1; done; true'; }
+health() { echo '```'; docker exec $NAME sh -c 'free -m; echo; gitlab-ctl status 2>&1 | cut -c1-80 | head -20' 2>&1; echo '```'; }
 suite() { # label -> runs the overlay suite and prints its summary, any failures, and the log tail if it never finished
+  lean
   C=$NAME BASE=http://localhost:$PORT VELA_MODE=overlay RESULTS=/tmp/suite.md dev/e2e.sh > /tmp/suite.log 2>&1
   echo "## Full overlay suite $1"; echo
   summary=$(grep -E 'passed|failed' /tmp/suite.log | tail -1)
   case "$summary" in *" 0 failed"*) ;; *) SUITE_FAILED=1 ;; esac # a suite that did not finish, or had failures, fails the job
   if [ -n "$summary" ]; then echo "\`$summary\`"; else echo "The suite did not finish. First and last lines of its log:"; echo; echo '```'; head -12 /tmp/suite.log | cut -c1-200; echo '...'; tail -8 /tmp/suite.log | cut -c1-200; echo '```'; fi
+  [ -n "$summary" ] || { echo 'Server memory and services right after the failure:'; health; }
   echo; grep -E '^FAIL' /tmp/suite.log | sed 's/^/    /'; echo
 }
 suite "after the upgrade"
