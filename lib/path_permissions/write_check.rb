@@ -9,7 +9,7 @@ module PathPermissions
   # unauthorized intermediate change is caught even if a later commit reverts it) and raises
   # GitAccess::ForbiddenError with the returned string.
   module WriteCheck
-    DENIED = 'You are not allowed to change a protected path in this push.'
+    DENIED = 'You are not allowed to change a protected path in this push. A clone contains every file even where GitLab hides it. Undo your change to that path (git restore) and ask a Maintainer if you need Write access.'
     UNVERIFIABLE = 'Path permissions could not be verified for this push; it was rejected.'
 
     # DiffCheck only sees paths per newly introduced commit (merge commits are diffed against ALL
@@ -138,7 +138,7 @@ module PathPermissions
 
       # Do not reveal a path name to someone who cannot even view it.
       visible = PathPermissions.allowed?(rules, user_id: user.id, group_ids: groups, path: path.path, level: :view)
-      visible ? "You are not allowed to change '#{path.path}' (path permissions)." : DENIED
+      visible ? "You are not allowed to change '#{path.path}' (path permissions). Undo your change to it (git restore) and ask a Maintainer if you need Write access." : DENIED
     rescue StandardError => e
       Rails.logger.error("path_permissions: #{e.class}: #{e.message}") if defined?(Rails)
       UNVERIFIABLE
