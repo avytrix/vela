@@ -183,6 +183,17 @@ export default function HomePage() {
 					. It is an independent project. It is not made by, endorsed by or affiliated with GitLab Inc. GitLab is a
 					trademark of GitLab Inc.
 				</p>
+				<nav aria-label="Avytrix" className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+					<a href={siteConfig.organization.url} className="hover:text-fd-foreground underline-offset-4 hover:underline">
+						Avytrix home
+					</a>
+					<a href={siteConfig.organization.opensource} className="hover:text-fd-foreground underline-offset-4 hover:underline">
+						Open source
+					</a>
+					<a href={siteConfig.organization.contact} className="hover:text-fd-foreground underline-offset-4 hover:underline">
+						Contact
+					</a>
+				</nav>
 			</footer>
 		</main>
 	);

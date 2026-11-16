@@ -1,9 +1,9 @@
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
-import { BookOpen, Globe, Heart } from "lucide-react";
+import { BookOpen, Globe, Heart, House } from "lucide-react";
 import { GithubMark } from "@/components/github-mark";
 import { asset, siteConfig } from "@/lib/site";
 
-/** The header shared by the home page and the docs: logo and name, Docs, GitHub, Sponsor, Avytrix. */
+/** The header shared by the home page and the docs: logo and name, Avytrix home, Docs, GitHub, Sponsor, open source. */
 export function baseOptions(): BaseLayoutProps {
 	return {
 		nav: {
@@ -24,6 +24,12 @@ export function baseOptions(): BaseLayoutProps {
 			transparentMode: "none",
 		},
 		links: [
+			// The way back to the company site, first so it is easy to find
+			{
+				icon: <House />,
+				text: "Avytrix home",
+				url: siteConfig.organization.url,
+			},
 			{
 				icon: <BookOpen className="text-fd-primary" />,
 				text: <span className="font-semibold text-fd-primary">Docs</span>,
@@ -48,9 +54,9 @@ export function baseOptions(): BaseLayoutProps {
 			},
 			{
 				type: "icon",
-				label: siteConfig.organization.name,
+				label: "All open source projects",
 				icon: <Globe className="text-fd-primary" />,
-				text: siteConfig.organization.name,
+				text: "All open source projects",
 				url: siteConfig.organization.opensource,
 				external: true,
 			},
