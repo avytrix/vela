@@ -1,0 +1,8 @@
+node_modules
+.next
+.source
+out
+next-env.d.ts
+*.tsbuildinfo
+# Generated from ../README.md and ../docs by scripts/sync-docs.mjs on every build
+content

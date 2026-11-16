@@ -1,0 +1,301 @@
+/* Copied from the sibling Avytrix docs site (nestjs-drizzle-crud/apps/docs), trimmed to what vela uses. */
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+/*
+ * The theme: a blue primary (#2552FF, lifted for dark mode), cool black #0B0D12 for dark
+ * surfaces, Geist for text and Geist Mono for code, and a reading rhythm (leading, measure,
+ * heading spacing) tuned for long technical pages.
+ *
+ * Fumadocs expects oklch. These are converted from the hex values rather than eyeballed.
+ */
+:root {
+	--color-fd-primary: oklch(0.534 0.258 265.7); /* #2552FF */
+	--color-fd-ring: oklch(0.534 0.258 265.7);
+	--color-fd-accent-foreground: oklch(0.534 0.258 265.7);
+	/*
+   * Muted text, darkened from Fumadocs' 45% grey. That grey passed on white but not on the tinted
+   * surfaces it sits on most (sidebar, tabs, search, callouts): 4.05 to 4.35:1 against WCAG AA's
+   * 4.5, measured 2026-10-26. At 36% it clears AA on all of them.
+   */
+	--color-fd-muted-foreground: hsl(0, 0%, 36%);
+
+	/* Geist for everything, Geist Mono for data and code only. */
+	--font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+	--font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+	/*
+   * Vertical rhythm.
+   *
+   * Fumadocs ships a tight default measure and leading, which reads as cramped once the prose
+   * is long enough to have paragraphs. These are the marketing site's own type scale, so the
+   * two sites set text the same way: body at 1.7, headings at 1.2 to 1.35, and the slight
+   * negative tracking the guideline specifies for Geist at text sizes.
+   */
+	--fd-leading-prose: 1.7;
+	--fd-leading-heading: 1.25;
+	--fd-measure: 72ch;
+}
+
+.dark {
+	/* Lifted for contrast on dark surfaces; the same hue, not a different blue. */
+	--color-fd-primary: oklch(0.678 0.168 256.7);
+	--color-fd-ring: oklch(0.678 0.168 256.7);
+	--color-fd-accent-foreground: oklch(0.678 0.168 256.7);
+	/* Cool black #0B0D12. */
+	--color-fd-background: oklch(0.159 0.011 268);
+	/* Fumadocs' own dark value, restated: the light override above comes later and would win here. */
+	--color-fd-muted-foreground: hsla(0, 0%, 70%, 0.8);
+}
+
+/*
+ * Typography, applied to the rendered page only.
+ *
+ * Scoped to `.prose` so it reaches MDX body copy and leaves the sidebar, search dialog and
+ * table of contents on Fumadocs' own UI scale, which is deliberately denser than prose and
+ * should stay that way.
+ */
+.prose {
+	line-height: var(--fd-leading-prose);
+	letter-spacing: -0.011em;
+}
+
+.prose :is(h1, h2, h3, h4) {
+	line-height: var(--fd-leading-heading);
+	letter-spacing: -0.02em;
+	text-wrap: balance;
+}
+
+/* Space above a heading, so a new section is visibly a new section. */
+.prose :is(h2, h3) {
+	margin-top: 2.5rem;
+}
+
+.prose h2 {
+	margin-top: 3.25rem;
+}
+
+/* Paragraphs and lists breathe; a wall of text is the thing being fixed here. */
+.prose :is(p, ul, ol, blockquote) {
+	margin-block: 1.1em;
+}
+
+.prose li {
+	margin-block: 0.4em;
+}
+
+.prose li > p {
+	margin-block: 0.5em;
+}
+
+/*
+ * A comfortable measure. Long lines are the other half of "it reads tight": leading alone does
+ * not fix a 110-character line. Tables, code and callouts opt out, since they carry their own
+ * width and clipping them would be worse than a long line.
+ */
+.prose > :is(p, ul, ol, blockquote, h1, h2, h3, h4) {
+	max-width: var(--fd-measure);
+}
+
+/*
+ * The page lede, matched to body copy.
+ *
+ * Fumadocs styles its description `text-lg text-fd-muted-foreground`: larger than the prose and
+ * in the muted colour. On a documentation page that makes the opening paragraph the odd one out,
+ * bigger and fainter than everything it introduces, and the eye reads the contrast as emphasis
+ * where none is meant.
+ *
+ * Size, weight and colour all come from the same tokens as body copy, and `!important` is needed
+ * only because Fumadocs' utilities are on the element itself.
+ */
+.doc-lede {
+	font-size: 1rem !important;
+	font-weight: 400 !important;
+	/* Fumadocs sets prose at `text-fd-foreground/90`, so the lede takes the same 90% rather than
+     the solid token: at full strength it reads a shade heavier than the paragraph beneath it. */
+	--doc-lede-color: color-mix(
+		in oklab,
+		var(--color-fd-foreground) 90%,
+		transparent
+	);
+	color: var(--doc-lede-color) !important;
+	line-height: var(--fd-leading-prose);
+	letter-spacing: -0.011em;
+	max-width: var(--fd-measure);
+}
+
+/* Table text is data, so it takes the mono face and tabular figures. */
+.prose table {
+	font-variant-numeric: tabular-nums;
+}
+
+html {
+	scrollbar-gutter: stable;
+}
+
+html > body[data-scroll-locked] {
+	margin-right: 0px !important;
+	--removed-body-scroll-bar-size: 0px !important;
+}
+
+/*
+ * Pointer cursor on anything clickable.
+ *
+ * Tailwind v4 dropped the v3 Preflight rule that gave `button` and `[role="button"]` a pointer
+ * cursor, so every copy button, theme toggle and collapsible section in Fumadocs inherits the
+ * browser default arrow. Links already get it; the rest have to be asked. Unlayered on purpose:
+ * `@layer base` would lose to Fumadocs' own layered rules.
+ */
+button:not(:disabled):not([aria-disabled="true"]),
+[role="button"]:not([aria-disabled="true"]),
+[role="tab"],
+[role="option"],
+summary,
+select,
+label[for] {
+	cursor: pointer;
+}
+
+/*
+ * Code blocks are dark in both themes.
+ *
+ * Shiki emits both palettes on every token as --shiki-light and --shiki-dark; Fumadocs picks one
+ * with `.dark`. Pointing light mode at the dark palette is enough for the tokens, and the rest of
+ * the figure (title bar, copy button, border) is Fumadocs' own colour tokens, redefined here so
+ * the chrome around the code follows it. Scoped to `figure.shiki`, which is the block: inline
+ * `code` inside a paragraph stays with the page theme, where it belongs.
+ */
+figure.shiki:not(.not-fumadocs-codeblock *) {
+	--color-fd-card: hsl(215, 14%, 16%);
+	--color-fd-foreground: hsl(210, 17%, 90%);
+	--color-fd-muted-foreground: hsl(213, 12%, 68%);
+	--color-fd-border: hsla(0, 0%, 100%, 12%);
+	--color-fd-accent: hsla(0, 0%, 100%, 8%);
+	--color-fd-accent-foreground: hsl(210, 17%, 96%);
+	--color-fd-ring: hsla(0, 0%, 100%, 40%);
+	--color-fd-secondary: hsla(0, 0%, 100%, 8%);
+	--color-fd-secondary-foreground: hsl(210, 17%, 90%);
+	--color-fd-muted: hsla(0, 0%, 100%, 6%);
+
+	/*
+   * The block's own background, whatever Fumadocs put on it. Inside a Tabs panel (every install
+   * and run command) the figure gets `bg-fd-secondary`, which the line above makes 8% white: on the
+   * page's light card that read as light grey, under tokens meant for a dark surface, so the
+   * command was barely legible (2026-10-26).
+   */
+	background-color: var(--color-fd-card);
+
+	code span {
+		color: var(--shiki-dark);
+		font-style: var(--shiki-dark-font-style);
+	}
+
+	/*
+   * Leading inside the block.
+   *
+   * The figure carries `not-prose`, so the `.prose` rules above deliberately do not reach it and
+   * the lines were left at the Shiki default, which is tighter than the surrounding text. Code is
+   * read line by line and scanned for a changed character, so it wants more room between lines
+   * than prose does, not less. Set on `.line` because `pre` lays `code` out as a flex column and
+   * each line is a flex item, where a line-height on the ancestor does not inherit usefully.
+   */
+	code .line {
+		line-height: 1.9;
+	}
+
+	/*
+   * GitHub-dark's comment grey is 3.1:1 on this surface; its lighter grey clears AA. Matched on the
+   * value alone: after hydration React rewrites the inline style with spaces (`--shiki-dark: #6A737D`).
+   */
+	code span[style*="6A737D" i] {
+		color: #959da5;
+	}
+
+	/* Air at the top and bottom, so the first and last line are not against the edge. */
+	pre {
+		padding-block: 0.5rem;
+	}
+}
+
+/*
+ * Room for the icon rail when the sidebar is collapsed.
+ *
+ * `--fd-sidebar-col` is written inline by Fumadocs' container (0px when collapsed), so an
+ * inline style is the only thing there is to beat. Desktop only: below md the sidebar is a
+ * drawer and there is no rail to make room for.
+ */
+@media (min-width: 48rem) {
+	#nd-notebook-layout[data-sidebar-collapsed="true"] {
+		--fd-sidebar-col: 3.5rem !important;
+	}
+}
+
+/*
+ * Sidebar section headings ("How it works", "Compatibility") sit closer to the item above.
+ *
+ * Fumadocs gives each separator `mt-6`, 24px on top of the item's own padding, which read as a
+ * blank row between sections . Half of it still separates the groups.
+ * Matched on the class, not on `p`, so nothing else in the sidebar moves.
+ */
+#nd-sidebar p[class*="mt-6"]:not(:first-child),
+#nd-sidebar-mobile p[class*="mt-6"]:not(:first-child) {
+	margin-top: 0.75rem;
+}
+
+/*
+ * Theme switch.
+ *
+ * Fumadocs' toggle already wraps the swap in `document.startViewTransition`, so a cross-fade
+ * does run. It just runs on the browser's defaults: 250ms, linear, and both snapshots blended
+ * with `mix-blend-mode: plus-lighter`. Plus-lighter is additive, so halfway through a light to
+ * dark swap the two layers sum towards white and the page flashes. That flash is what reads as
+ * "no animation".
+ *
+ * Fading the new snapshot in over a static old one avoids it: the old layer stays fully opaque
+ * underneath for the whole duration, so there is no additive blend and no dip to transparent
+ * in the middle. `::view-transition-new` already paints above `::view-transition-old`, so
+ * nothing needs reordering.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+	mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+	animation: none;
+}
+
+::view-transition-new(root) {
+	animation: fd-theme-in 420ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes fd-theme-in {
+	from {
+		opacity: 0;
+	}
+}
+
+/* Both layers held still leaves the new one opaque on top, which is an instant swap. */
+@media (prefers-reduced-motion: reduce) {
+	::view-transition-new(root) {
+		animation: none;
+	}
+}
+
+/*
+ * The active sidebar link: the primary blue on a 10% blue tint measured 4.45:1, a hair under AA (2026-10-26).
+ * An 8% tint clears it and still reads as the current page. The id outranks Fumadocs' utility.
+ */
+#nd-sidebar a[data-active="true"] {
+	background-color: color-mix(
+		in oklab,
+		var(--color-fd-primary) 8%,
+		transparent
+	);
+}
+
+body {
+	padding-inline: max(0px, env(safe-area-inset-left))
+		max(0px, env(safe-area-inset-right));
+}
