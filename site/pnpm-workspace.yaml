@@ -1,0 +1,27 @@
+# The docs site is tooling, not part of vela. It has its own lockfile and never
+# reaches lib/, bin/ or anything GitLab loads.
+
+# Supply-chain settings, the same as the sibling Avytrix docs sites. A new version
+# is only resolvable after it has been public for seven days (10080 minutes),
+# transitive dependencies cannot come from non-registry sources, and a package
+# cannot downgrade these settings. Direct dependencies are pinned to exact
+# versions that were at least two weeks old when added.
+minimumReleaseAge: 10080
+blockExoticSubdeps: true
+trustPolicy: no-downgrade
+# undici-types 6.21.0 (types only, via @types/node 22) was published without the
+# provenance an earlier 6.x had. The sibling docs site resolves the same version;
+# it is excluded by exact version, so any other release still gets the check.
+trustPolicyExclude:
+  - undici-types@6.21.0
+
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+
+# Patched versions of advisory-flagged transitive dependencies (the same entries
+# as the sibling docs site). Drop an entry once the parent ships the fix.
+overrides:
+  postcss: ">=8.5.23" # GHSA-qx2v-qp2m-jg93, GHSA-fxqj-rqcc-2cmp, via next
+  nanoid: ">=3.3.17" # GHSA-2v37-7h3g-55p8, via next > postcss
+  sharp: ">=0.35.5" # libvips advisories, via next

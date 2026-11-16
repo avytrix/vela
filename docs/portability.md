@@ -42,7 +42,7 @@ A GitLab upgrade can replace files under its own directories. vela puts nothing 
 
 | Install | Tier A (hook) | Tier B (overlay) |
 | ------- | ------------- | ---------------- |
-| **Linux package** | The hook lives in `custom_hooks_dir`, which upgrades do not touch | Add a copy step to `/etc/gitlab/gitlab.rb`. It runs on **every reconfigure**, which is part of every package upgrade, so the initializer is put back automatically. See [install.md](./install.md#upgrading-gitlab) |
+| **Linux package** | The hook lives in `custom_hooks_dir`, which upgrades do not touch | Add a copy step to `/etc/gitlab/gitlab.rb`. It runs on **every reconfigure**, which is part of every package upgrade, so the initializer is put back automatically. See [install.md](./install.md#upgrading-and-downgrading-gitlab) |
 | **Docker** | Mount the hook directory | Mount `lib/` and `overlay/` as directories and copy the initializer from `gitlab.rb` as above. This is what `dev/up.sh` does. It was tested through an in-place container upgrade |
 | **Source** | `custom_hooks_dir` in `gitlab-shell/config.yml` | Copy the initializer after each `git checkout` of a new tag. The doctor script reports if it is missing |
 | **Helm** | Set the Gitaly chart's global server hooks | Build a custom image with the initializer baked in |

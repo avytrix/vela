@@ -1,0 +1,38 @@
+{
+	"name": "vela-docs",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Documentation site for vela, built from the repository's README.md and docs/ at build time",
+	"packageManager": "pnpm@10.28.1",
+	"engines": {
+		"node": ">=20.0.0"
+	},
+	"scripts": {
+		"sync": "node scripts/sync-docs.mjs",
+		"postinstall": "node scripts/sync-docs.mjs && fumadocs-mdx",
+		"dev": "node scripts/sync-docs.mjs && next dev -p 3000",
+		"build": "node scripts/sync-docs.mjs && fumadocs-mdx && next build",
+		"typecheck": "node scripts/sync-docs.mjs && fumadocs-mdx && tsc --noEmit",
+		"seo": "python3 scripts/seo_check.py out",
+		"serve": "python3 scripts/serve.py"
+	},
+	"dependencies": {
+		"fumadocs-core": "16.17.5",
+		"fumadocs-mdx": "15.4.7",
+		"fumadocs-ui": "npm:@fumadocs/base-ui@16.17.5",
+		"lucide-react": "1.61.0",
+		"next": "16.4.3",
+		"react": "19.3.1",
+		"react-dom": "19.3.1"
+	},
+	"devDependencies": {
+		"@tailwindcss/postcss": "4.3.3",
+		"@types/mdx": "2.0.14",
+		"@types/node": "22.20.1",
+		"@types/react": "19.3.0",
+		"@types/react-dom": "19.3.0",
+		"postcss": "8.5.32",
+		"tailwindcss": "4.3.3",
+		"typescript": "5.9.3"
+	}
+}

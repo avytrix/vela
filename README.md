@@ -5,6 +5,8 @@
 [![GitHub stars](https://img.shields.io/github/stars/avytrix/vela?style=social)](https://github.com/avytrix/vela)
 [![Sponsor @avytrix](https://img.shields.io/badge/Sponsor-%40avytrix-db61a2?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/avytrix)
 
+Documentation: https://avytrix.dev/opensource/gitlab-vela
+
 **Folder and file permissions for self-hosted GitLab CE.** Decide which users and groups can view, read or write each path in a project, without paying for a higher GitLab tier.
 
 Built and maintained by **[Avytrix Technologies](https://avytrix.dev/?utm_source=vela&utm_medium=docs&utm_campaign=readme)**. Need help shipping? [Hire the team behind it](#work-with-avytrix).

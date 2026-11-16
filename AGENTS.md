@@ -12,6 +12,7 @@ ruby test/evaluator_test.rb   # one file
 dev/up.sh                     # throwaway GitLab CE in Docker (GITLAB_TAG, VELA_OVERLAY=0 for hook-only)
 dev/e2e.sh                    # live suite against it (VELA_MODE=overlay|hook), rewrites docs/e2e-results.md
 dev/compat.sh 17.11.0-ce.0 hook   # one fresh version, writes docs/compat/<tag>-<tier>.md
+cd site && pnpm install && pnpm build && pnpm seo   # docs site (Node 20+, pnpm 10), output in site/out
 ```
 
 `bin/test` must pass before every commit. Run `dev/e2e.sh` for any change to `lib/path_permissions/write_check.rb`, `store.rb`, `install.rb` or `db/schema.sql`. Unit tests use a stand-in for GitLab, so they cannot prove behaviour on the real thing.
@@ -34,6 +35,7 @@ db/schema.sql      add-on tables and grants (Tier B)
 bin/doctor         read-only check of what is installed; run after every upgrade
 dev/               up.sh (any version/tier), e2e.sh (both tiers), compat.sh (one version)
 docs/              install guide, design, version audit, e2e results, agent guide
+site/              docs website for avytrix.dev/opensource/gitlab-vela (Next.js tooling, own lockfile; built from README.md and docs/, never loaded by GitLab). New docs/*.md pages go in PAGES in site/scripts/sync-docs.mjs
 ```
 
 ## Two tiers

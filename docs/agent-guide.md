@@ -155,7 +155,7 @@ Tell the human, plainly:
 - The exact rules, in a table, and who lost access because of an allow-list.
 - Which tests you ran and the real results, including anything that failed or that you did not run.
 - The limit: `git clone` and `git fetch` are not restricted; View and Read hiding is not built yet.
-- How to roll back, and that **a GitLab upgrade can remove the initializer** (they must re-check after each upgrade, see [`install.md`](./install.md#upgrading-gitlab)).
+- How to roll back, and that **a GitLab upgrade can remove the initializer** (they must re-check after each upgrade, see [`install.md`](./install.md#upgrading-and-downgrading-gitlab)).
 
 ## Hard rules
 
