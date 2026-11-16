@@ -26,6 +26,7 @@ g() { local d="$1"; shift
 
 psql() { docker exec -i $C gitlab-psql -tA -c "$1"; }
 api()  { curl -s -H "PRIVATE-TOKEN: $1" "${@:2}"; }
+code() { curl -s -o /dev/null -w '%{http_code}' -H "PRIVATE-TOKEN: $1" "$2"; }
 json() { python3 -c "import sys,json;d=json.load(sys.stdin);print($1)"; }
 
 record() { # name expected actual detail
@@ -80,6 +81,9 @@ mkproject() {
   # Developers may push to main, so the path rules are the only thing standing in the way.
   api $RT -X DELETE $BASE/api/v4/projects/$pid/protected_branches/main >/dev/null
   api $RT -X POST $BASE/api/v4/projects/$pid/protected_branches -d "name=main&push_access_level=30&merge_access_level=30" >/dev/null
+  # Older GitLab grants new members access in a background job; wait until both can see the project.
+  local i; for i in $(seq 1 30); do
+    [ "$(code $AT $BASE/api/v4/projects/$pid)" = 200 ] && [ "$(code $BT $BASE/api/v4/projects/$pid)" = 200 ] && break; sleep 2; done
   echo $pid
 }
 PID=$(mkproject e2e); OPEN=$(mkproject e2e-open)
@@ -206,7 +210,6 @@ NOTES_RESP=$(api $RT -X POST $BASE/api/v4/projects/$PID/repository/commits -H 'C
   {\"action\":\"create\",\"file_path\":\"backend/notes.txt\",\"content\":\"$NEEDLE\"}]}")
 NOTES_SHA=$(api $RT $BASE/api/v4/projects/$PID/repository/commits/main | json 'd["id"]')
 P4=$BASE/api/v4/projects/$PID
-code() { curl -s -o /dev/null -w '%{http_code}' -H "PRIVATE-TOKEN: $1" "$2"; }
 list() { api $1 "$2" | python3 -c "import sys,json;d=json.load(sys.stdin);print(' '.join(sorted(x.get('path',x.get('name','')) for x in d)) if isinstance(d,list) else 'ERR')"; }
 has() { case " $1 " in *" $2 "*) echo yes;; *) echo no;; esac; }
 record "root: the API commit that creates the notes files (setup for search and diff)" 200 $(code $RT "$BASE/api/v4/projects/$PID/repository/files/frontend%2Fnotes.txt?ref=main")
@@ -294,10 +297,10 @@ api $RT -X POST $BASE/api/v4/groups/$FEG/members -d "user_id=$AID&access_level=3
 O=$W/open; clone $AU $AT $O $ONAME; fresh $O o1; edit $O backend/anything.rb; commit $O; out=$(push $O HEAD:refs/heads/o1)
 record "project without path permissions keeps native behaviour" allowed $(verdict $?)
 
-# A project with CI/CD turned off: GitLab answers 403 (not 404) for the policy variable. This once rejected every push.
+# A project with CI/CD turned off: recent GitLab answers 403 (not 404) for the policy variable. This once rejected every push.
 NOCI=$(mkproject e2e-noci); api $RT -X PUT $BASE/api/v4/projects/$NOCI -d "builds_access_level=disabled" >/dev/null
 NNAME=$(api $RT $BASE/api/v4/projects/$NOCI | json 'd["path"]')
-record "CI/CD really is off on that project (variables API says 403)" 403 $(code $RT "$BASE/api/v4/projects/$NOCI/variables/VELA_PATH_POLICY")
+record "CI/CD really is off on that project" disabled $(api $RT $BASE/api/v4/projects/$NOCI | json 'd.get("builds_access_level")')
 N=$W/noci; clone $AU $AT $N $NNAME; fresh $N n1; edit $N backend/anything.rb; commit $N; out=$(push $N HEAD:refs/heads/n1)
 record "project with CI/CD turned off keeps native behaviour (push accepted)" allowed $(verdict $?)
 
